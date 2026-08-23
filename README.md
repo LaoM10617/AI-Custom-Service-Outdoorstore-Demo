@@ -1,9 +1,3 @@
-# BlueHarbor Outdoor Store AI Support
-
-An experimental project for AI customer support and business automation built around a fictional outdoor gear store. The goal is not to impersonate a real brand, nor to disguise demo code as a production system, but to connect to a Shopify development store at the lowest possible cost and gradually practice real-world concerns such as orders, webhooks, permissions, security, auditing, evaluation, and human approval.
-
-> **Project status: runnable demo, currently evolving toward realistic business simulation.** Chat, RAG, streaming responses, monitoring, and reliability components are already implemented. Order lookup is still Mock, while Shopify integration, persistence, authentication, and approval flows for high-risk actions are not yet complete. Do not deploy this directly for real customers or real transactions.
-
 ## Business Background
 
 BlueHarbor is a fictional online outdoor store that sells camping lanterns, hiking water bottles, waterproof backpacks, and digital camping checklists. This business setting is used to simulate:
@@ -13,8 +7,6 @@ BlueHarbor is a fictional online outdoor store that sells camping lanterns, hiki
 - Customer-service tickets such as damaged goods, address changes, and order cancellations.
 - Repeated Shopify webhook deliveries, external API timeouts, and model service failures.
 - AI-proposed actions, human approval, execution results, and audit tracking.
-
-BlueHarbor has no relationship with Allianz. This repository must not be used to impersonate Allianz or any other real company.
 
 ## Delivery Goals
 
