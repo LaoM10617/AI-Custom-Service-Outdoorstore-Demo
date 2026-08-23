@@ -23,7 +23,7 @@ from app.services.semantic_cache import semantic_cache
 from app.services.tracing import traces
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-logger = logging.getLogger("airobot.main")
+logger = logging.getLogger("blueharbor.support")
 
 
 @asynccontextmanager
@@ -39,7 +39,7 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(
-    title="AI Robot 智能客服服务（FastAPI + LangChain RAG + CrewAI 多 Agent）",
+    title="BlueHarbor Outdoor Store AI Support",
     version="1.0.0",
     lifespan=lifespan,
 )

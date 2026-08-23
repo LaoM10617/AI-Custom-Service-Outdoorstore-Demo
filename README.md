@@ -1,476 +1,277 @@
-# AI Robot Intelligent Customer Service Platform (Simplified and self-replicated version from Allianz Q4 Intern Project)
+# BlueHarbor Outdoor Store AI Support
 
-A production-ready **complete intelligent customer service platform** built with **FastAPI + LangChain RAG + CrewAI multi-agent orchestration**.
-It provides core customer-service capabilities such as intent-routing, knowledge-base question answering, multi-agent collaboration, and SSE streaming chat. It also includes retrieval engineering (BM25 + RRF + reranker), reliability engineering (retries / rate limiting / semantic cache), observability (real-time monitoring dashboard), and an evaluation framework (RAGAS closed loop). It can be deployed directly to production or integrated as an independent AI service into existing business systems (such as Spring Cloud or Node.js backends) over HTTP/SSE.
+一个面向虚构户外用品商店的 AI 客服与业务自动化实验项目。项目目标不是冒充真实品牌，也不是把演示代码包装成生产系统，而是用最低成本接入 Shopify 开发商店，逐步练习真实订单、Webhook、权限、安全、审计、评测和人工审批等落地问题。
 
-![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.110%2B-009688)
+> **项目状态：可运行 Demo，正在向真实业务模拟演进。** 当前聊天、RAG、流式响应、监控和稳定性组件已有实现；订单查询仍为 Mock，Shopify 接入、持久化、鉴权和高风险操作审批尚待完成。请勿直接面向真实客户或真实交易上线。
 
-## Table of Contents
+## 业务背景
 
-- [Project Positioning](#project-positioning)
-- [Core Capability Overview](#core-capability-overview)
-- [Feature Details](#feature-details)
-- [Tech Stack](#tech-stack)
-- [System Architecture](#system-architecture)
-- [Quick Start (From Clone to Run)](#quick-start-from-clone-to-run)
-- [API Documentation](#api-documentation)
-- [Visualization Dashboard](#visualization-dashboard)
-- [Docker Deployment](#docker-deployment)
-- [CI Gates](#ci-gates)
-- [Evaluation (RAGAS)](#evaluation-ragas)
-- [Retrieval and Chunking Experiments](#retrieval-and-chunking-experiments)
-- [Design Decisions](#design-decisions)
-- [Project Structure](#project-structure)
-- [Environment Variables](#environment-variables)
-- [FAQ](#faq)
-- [License](#license)
+BlueHarbor 是一家虚构的户外用品网店，销售露营灯、登山水壶、防水背包和数字版露营清单。这个业务背景用于模拟：
 
-## Project Positioning
+- 商品规格、配送和售后政策问答；
+- 订单、付款、履约、物流和退款状态查询；
+- 商品破损、地址修改、取消订单等客服工单；
+- Shopify Webhook 重复投递、外部 API 超时和模型服务异常；
+- AI 提议操作、人工审批、执行结果和审计追踪。
 
-This service turns the customer-service pipeline of **"intent recognition → tool/RAG execution → streaming response"** into a **production-usable complete application**, rather than a toy demo:
+BlueHarbor 与 Allianz 没有关系。本仓库不得用于冒充 Allianz 或任何其他真实企业。
 
-1. **Multi-agent orchestration**: two CrewAI agents (`Intent Classifier -> Customer Service Executor`) collaborate sequentially with multiple tools. If CrewAI is unavailable or invocation fails, the system automatically falls back to an equivalent built-in LangChain router to keep the service available.
-2. **RAG retrieval pipeline**: PDF / Word / Markdown parsing -> chunking -> dual indexing with vectors + BM25 -> RRF fusion -> bge-reranker reranking -> retrieval-augmented generation. Built-in comparative experiments demonstrate the gains of hybrid retrieval (vector 67% -> hybrid 98% hit rate).
-3. **Engineering support**: conversation memory, SSE streaming, tenacity retries, sliding-window rate limiting, semantic cache, tracing, RAGAS evaluation sets, Docker one-click deployment, and CI quality gates — every layer is observable, evaluable, and replaceable.
+## 落地目标
 
-## Core Capability Overview
+项目采用渐进式路线，优先建立真实业务边界，而不是过早引入复杂基础设施。
 
-| Capability Module | What It Provides | Related Interface |
-|---|---|---|
-| Intelligent Chat | Intent routing (`knowledge` / `order` / `chat`) + RAG QA + tool calling + multi-turn memory | `POST /api/v1/chat` |
-| Streaming Chat | SSE token-by-token output, full-response instant return on cache hit | `POST /api/v1/chat/stream` |
-| Multi-Agent | CrewAI Intent Classifier -> Customer Service Executor, automatic fallback on failure | `app/agents/crew.py` |
-| Knowledge Base QA | Example KB auto-import on startup; supports PDF / DOCX / MD / TXT upload and ingestion | `POST /api/v1/ingest` |
-| Tool Integration | Order lookup (Mock, pluggable with real systems), after-sales rules | `app/agents/tools.py` |
-| Reliability | Three layers of protection: retries / rate limiting / semantic cache | `app/services/*` |
-| Observability | Real-time monitoring dashboard (including simulated user chat and end-to-end visualization), request tracing, runtime metrics | `/dashboard`, `/api/v1/traces`, `/api/v1/stats` |
-| Evaluation | Four RAGAS metrics + LLM-as-Judge + 52-item evaluation set | `eval/run_eval.py` |
-| Deployment | Docker / docker-compose / GitHub Actions gates | repository root |
+### 阶段 0：当前 Demo
 
-## Feature Details
+- FastAPI 同步聊天和 SSE 流式聊天；
+- `knowledge / order / chat` 意图路由；
+- PDF、DOCX、Markdown、TXT 知识库导入；
+- 向量检索 + BM25 + RRF，可选 BGE reranker；
+- 可选 CrewAI 双 Agent，失败时降级到内置路由；
+- 进程内会话记忆、限流、语义缓存和链路追踪；
+- 自包含监控 Dashboard、评测数据、Docker 和 CI；
+- 订单查询为固定 Mock，不代表真实业务集成。
 
-### 1. Intelligent Chat Service (`app/services/chat.py`)
+### 阶段 1：Shopify 真实业务模拟
 
-- **Intent routing**: the LLM classifies each user message as `knowledge` (knowledge QA), `order` (order inquiry), or `chat` (casual chat). If JSON parsing of the classification fails, it falls back to `chat` so the service does not break.
-- **Multi-turn session memory**: isolated by `session_id` (`InMemoryChatMessageHistory`). Each session keeps the latest `AIROBOT_MEMORY_MAX_TURNS` turns, and includes the latest `AIROBOT_MEMORY_RETRIEVE_TURNS` turns during generation to support contextual follow-up questions.
-- **Dual output channels**: synchronous JSON (`/api/v1/chat`) and SSE streaming (`/api/v1/chat/stream`). In streaming mode, events are pushed as `stage (rate limiting / cache / intent / retrieval / generation, etc.) -> intent -> token* -> done`, allowing the dashboard to reconstruct the full pipeline in real time.
-- **Fallback chain**: CrewAI is preferred when available (executed in an isolated thread) -> automatic fallback to the built-in LangChain router on exception -> if no API key is configured, the service returns a clear prompt instead of crashing.
+- 创建免费的 Shopify Development Store 和测试订单；
+- 通过自定义应用接收订单、履约、取消和退款 Webhook；
+- 使用 SQLite 保存订单镜像、Webhook 事件和审计日志；
+- 用真实只读订单查询替换 `query_order` Mock；
+- 实现 Webhook HMAC 校验、事件幂等和订单归属验证；
+- 增加订单查询、重复事件和越权访问的集成测试。
 
-### 2. Multi-Agent Orchestration (`app/agents/crew.py`)
+### 阶段 2：单人可运营试生产
 
-- **Two-agent collaboration**: the `Intent Classifier` (outputs intent JSON) -> the `Customer Service Executor` (executes with 3 tools), using `Process.sequential` and structured as `Agent (role / goal / background / tools / LLM) + Task + Crew`.
-- **Toolset** (`app/agents/tools.py`, with both raw functions and CrewAI `@tool` wrappers):
-  - `search_knowledge`: RAG-powered retrieval-augmented generation over the knowledge base.
-  - `query_order`: order / logistics lookup (currently Mock; in production, connect over HTTP to an order server; see “Design Decisions”).
-  - `after_sale_rule`: after-sales and return policy rules.
-- **Availability guarantees**: if `crewai` is not installed, `CREW_TOOLS_READY=false` and the system automatically switches to the built-in router. Runtime exceptions also trigger fallback, and the observable status is exposed as `crew_available` via `/api/v1/stats`.
+- Dashboard 和管理接口鉴权；
+- 会话、缓存和限流迁移到 Redis，业务数据迁移到 PostgreSQL；
+- 上传大小、类型、超时和并发限制；
+- 结构化日志、敏感信息脱敏、指标和告警；
+- 退款、取消、修改地址等高风险操作进入人工审批队列；
+- 完整的失败恢复、数据保留和隐私删除流程。
 
-### 3. RAG Knowledge Base (`app/rag/`)
-
-- **Document parsing** (`loader.py`): PDF parsing via `pypdf`, Word parsing via `python-docx`, and direct reading for text files.
-- **Chunking strategy** (`retriever.py`):
-  - Markdown files are first split by heading hierarchy using `MarkdownHeaderTextSplitter` (H1–H4, with headings preserved in the body), and oversized sections are then split again.
-  - Other file types use `RecursiveCharacterTextSplitter` (default: 400 characters with 80 overlap, prioritizing Chinese punctuation for sentence boundaries).
-- **Dual indexing + fusion**:
-  - Vector path: OpenAI-compatible embeddings (DashScope `text-embedding-v4` / Ollama `nomic-embed-text`), with pluggable vector backends: `InMemoryVectorStore` (default, zero dependency) or Milvus (`AIROBOT_VECTOR_STORE=milvus`, persistent ANN), both sharing the same interface.
-  - Lexical path: `jieba` Chinese tokenization + `rank_bm25` (`BM25Okapi`) to compensate for vector models being less sensitive to proper nouns.
-  - Fusion: rankings from both paths are merged by `reciprocal_rank_fusion` (RRF) in `app/rag/fusion.py`.
-- **Semantic reranking** (`reranker.py`): `BAAI/bge-reranker-base` CrossEncoder reranks candidates. It uses lazy loading, prefers local cache (`HF_ENDPOINT` mirror), and automatically degrades to fusion order if errors occur.
-- **Retrieval-augmented generation**: the `RAG_PROMPT` constrains the model to answer **only** based on the supplied documents, and to state clearly when the information is not present. Answers include sources (`file#chunk_number`) for traceability.
-
-### 4. Reliability Engineering (`app/services/`)
-
-| Component | Mechanism | Config |
-|---|---|---|
-| Retry `resilience.py` | Exponential backoff with tenacity (starts at 0.5s, max 8s), retries only recoverable errors (429 / 5xx / network / timeout), validation errors fail fast; both sync and async versions plus `safe_call` for non-critical fallback paths | `AIROBOT_RETRY_ATTEMPTS`, `AIROBOT_RETRY_MAX_WAIT` |
-| Rate limiting `ratelimit.py` | In-process sliding window (per IP, 60s); returns JSON 429 on limit exceed; monitoring endpoints (`stats` / `traces`) are exempt | `AIROBOT_RATELIMIT_PER_MINUTE` |
-| Semantic cache `semantic_cache.py` | First-turn, no-context questions reuse answers only when **cosine >= 0.75 and jieba lexical overlap >= 0.5**; within candidates, the highest cosine score that passes both thresholds is selected; dynamic data (orders) is not cached | `AIROBOT_CACHE_ENABLED`, `CACHE_THRESHOLD`, `CACHE_LEXICAL_THRESHOLD` |
-
-### 5. Observability (`app/main.py` + `app/services/tracing.py`)
-
-- Request logging middleware: method / path / status code / latency (`X-Process-Time-Ms` response header).
-- Tracing: each request records stage latency for `cache_lookup / intent / retrieval / llm / first_token / total` (in-memory ring buffer of 300 items), and aggregates P95, average latency, cache hit rate, rate-limit blocks, and intent distribution.
-- Visualization dashboard: `/dashboard` is a self-contained single page with a built-in **simulated user chat + full pipeline visualization** panel (streaming queries with real-time display of stage latency), plus 3-second polling of status cards, feature guides, and live request details.
-
-### 6. Evaluation Framework (`eval/`)
-
-- Evaluation set `eval/dataset/qa.jsonl`: 52 samples across 8 topics, including negative examples where the knowledge base does not contain the answer.
-- Metrics: RAGAS Faithfulness / AnswerRelevancy / ContextPrecision / ContextRecall + LLM-as-Judge (1–5) + keyword-hit baseline.
-- Reports: console tables + `eval/reports/report_<timestamp>.json` / `.md` (score band statistics + low-scoring samples).
-- CI integration: the `eval` job runs automatically after configuring secrets (see [CI Gates](#ci-gates)).
-
-## Tech Stack
-
-| Layer | Components | Description |
-|---|---|---|
-| Service framework | FastAPI + uvicorn + Pydantic | Async APIs, automatic OpenAPI docs (`/docs`), SSE support |
-| LLM orchestration | LangChain (LCEL / ChatPromptTemplate / InMemoryVectorStore / Milvus) | Intent routing, RAG pipeline, streaming generation |
-| Multi-agent | CrewAI (`Agent` / `Task` / `Crew`) | Optional; automatically falls back if not installed |
-| Model access | OpenAI-compatible protocol | DashScope (`qwen-plus` / `text-embedding-v4`), DeepSeek, Ollama (`qwen2.5` / `nomic-embed-text`) |
-| Retrieval | `jieba` + `rank_bm25` (`BM25Okapi`), RRF fusion | Lexical recall and multi-path fusion |
-| Reranking | sentence-transformers `bge-reranker-base` | Optional; lazy loading + fallback |
-| Reliability | tenacity | Exponential backoff retries |
-| Evaluation | ragas 0.3.9 + langchain-community 0.3.31 | Four RAGAS metrics + LLM-as-Judge |
-| Deployment | Docker / docker-compose / GitHub Actions | Containerized deployment + CI gates |
-
-## System Architecture
+## 当前架构
 
 ```text
-Client (Mini Program / Web / Backend Service)
-  │  POST /api/v1/chat | /chat/stream | /ingest
-  ▼
-FastAPI (app/main.py)
-  │  ── Request logging middleware (latency stats) / sliding-window rate limiting middleware / unified exception handling
-  │
-  ├─ CrewAI available -> multi-agent (Intent Classifier -> Customer Service Executor, isolated thread)
-  │                     ├─ search_knowledge (RAG retrieval-augmented generation)
-  │                     ├─ query_order (Mock, production via HTTP to order-server)
-  │                     └─ after_sale_rule (after-sales rules)
-  │
-  └─ Fallback -> built-in LangChain router (intent classification + RAG / chat, logically equivalent to Crew)
-        │
-  └─ Reliability layer: semantic cache (first-turn dual threshold) -> retry (LLM / embedding) -> rate limiting (entry point)
-        │
-  └─ RAG pipeline:
-      document parsing (pypdf / python-docx) -> chunking (Recursive / Markdown headings)
-        -> embedding (OpenAI-compatible) -> vector retrieval
-        -> hybrid: jieba + BM25 lexical retrieval -> RRF fusion -> bge-reranker reranking
-        -> RAG generation (with session memory)
-        │
-  └─ Observability: traces -> /dashboard console / /api/v1/traces / /api/v1/stats
+用户 / Dashboard
+       |
+       v
+FastAPI API + SSE
+       |
+       +-- 语义缓存
+       +-- 意图路由
+       +-- RAG：向量 + BM25 + RRF + 可选 reranker
+       +-- 订单工具：当前 Mock，阶段 1 替换为 Shopify 订单镜像/API
+       +-- 会话记忆
+       |
+       v
+链路追踪 / 运行指标 / Dashboard
+
+阶段 1 新增：
+Shopify Development Store --Webhooks--> HMAC 校验与幂等处理 --> SQLite
+                                                        |
+客服订单查询 --------------------------------------------+
 ```
 
-**Full timing sequence of one chat request (non-streaming)**
+## 核心接口
 
-```text
-Client ──POST /api/v1/chat──▶ Rate limit middleware (allow / 429)
-      ──▶ Semantic cache check (first-turn without context only: embedding -> dual-threshold; return immediately on hit)
-      ──▶ Intent classification (LLM: knowledge / order / chat)
-      ──▶ Execution: knowledge -> hybrid retrieval (vector + BM25 -> RRF -> rerank) -> RAG generation
-              order     -> order tool (Mock / HTTP)
-              chat      -> casual chat via LLM
-      ──▶ Write session memory + write semantic cache (knowledge only) + record tracing
-      ──▶ 200 JSON {reply, intent, sources, engine, cache_hit}
-```
+- `GET /health`：健康检查；
+- `POST /api/v1/chat`：同步客服响应；
+- `POST /api/v1/chat/stream`：SSE 流式客服响应；
+- `POST /api/v1/ingest`：知识文档上传，当前尚无管理员鉴权；
+- `GET /api/v1/stats`：运行状态；
+- `GET /api/v1/traces`：最近请求和延迟汇总；
+- `GET /dashboard`：聊天和链路监控页面；
+- `GET /docs`：FastAPI OpenAPI 文档。
 
-## Quick Start (From Clone to Run)
-
-### Prerequisites
-
-- Windows / macOS / Linux; use PowerShell on Windows.
-- Python 3.10 - 3.13 (3.11 recommended): <https://www.python.org/downloads/>
-- One OpenAI-compatible LLM / embedding service; choose one of the following:
-  - **Local Ollama (recommended, free and offline)**: <https://ollama.com/>. After installation, run:
-    `ollama pull qwen2.5:1.5b && ollama pull nomic-embed-text`
-  - **Alibaba Cloud DashScope** (`qwen-plus` / `text-embedding-v4`, API key required)
-  - **DeepSeek** (note: no embedding API, so you must pair it with DashScope or Ollama for embeddings)
-
-### 0. One-Click Start (Recommended, Skip Steps 1–4 Below)
+示例请求：
 
 ```powershell
-cd E:\develop\airobot
-.\start.ps1        # or double-click start.bat
+$body = @{
+  message = "订单 202608090001 到哪里了？"
+  session_id = "demo-user-001"
+} | ConvertTo-Json
+
+Invoke-RestMethod `
+  -Uri http://localhost:8000/api/v1/chat `
+  -Method Post `
+  -Body $body `
+  -ContentType "application/json"
 ```
 
-`start.ps1` automatically performs: checking `.env` (creating one if missing) -> creating the virtual environment -> installing core dependencies -> checking whether Ollama and the models are ready -> starting the service and waiting for the health check -> automatically opening the dashboard in the browser at `http://localhost:8000/dashboard`.
-To stop the service: `.\stop.ps1` (logs are stored in `.logs/`).
+## 本地启动
 
-### 1. Create a Virtual Environment and Install Dependencies
+### 前置条件
+
+- Python 3.10–3.13，推荐 3.11；
+- Docker Desktop，可选；
+- 一个 OpenAI 兼容的 LLM 和 Embedding 服务；
+- 最低成本方案为本地 Ollama。
+
+### Windows 一键启动
+
+```powershell
+git clone <repository-url>
+cd <repository-directory>
+Copy-Item .env.example .env
+.\start.ps1
+```
+
+脚本会创建 `.venv`、安装核心依赖、检查 Ollama 并启动服务。Dashboard 地址为 <http://localhost:8000/dashboard>。
+
+停止服务：
+
+```powershell
+.\stop.ps1
+```
+
+### 手动启动
 
 ```powershell
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1        # macOS/Linux: source .venv/bin/activate
-
-# Core dependencies (service + RAG + reliability, required)
+.\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-
-# Optional capabilities, install as needed (automatic fallback if omitted; basic QA still works)
-pip install -r requirements-extra.txt    # CrewAI multi-agent + bge-reranker reranking (includes torch, large size)
-pip install -r requirements-eval.txt     # RAGAS evaluation
+Copy-Item .env.example .env
+uvicorn app.main:app --reload --port 8000
 ```
 
-### 2. Configure Environment Variables
+可选能力：
 
 ```powershell
-Copy-Item .env.example .env     # macOS/Linux: cp .env.example .env
+pip install -r requirements-extra.txt # CrewAI、reranker、Milvus
+pip install -r requirements-eval.txt  # RAGAS 评测
 ```
 
-Edit `.env` according to your LLM service (see [Environment Variables](#environment-variables)). Example for local Ollama:
+### Docker Compose
+
+```powershell
+Copy-Item .env.example .env
+docker compose up -d --build
+docker compose logs -f blueharbor-support
+Invoke-RestMethod http://localhost:8000/health
+```
+
+Compose 默认启动本地 Ollama，并自动拉取配置的聊天和向量模型。首次启动可能较慢。
+
+## 配置
+
+复制 `.env.example` 为 `.env` 后选择模型服务。Ollama 示例：
 
 ```ini
 AIROBOT_LLM_BASE_URL=http://localhost:11434/v1
 AIROBOT_LLM_API_KEY=ollama
-AIROBOT_LLM_MODEL=qwen2.5:1.5b
+AIROBOT_LLM_MODEL=qwen2.5:3b
 AIROBOT_EMBEDDING_BASE_URL=http://localhost:11434/v1
 AIROBOT_EMBEDDING_API_KEY=ollama
 AIROBOT_EMBEDDING_MODEL=nomic-embed-text
 ```
 
-### 3. Start the Service
+`AIROBOT_*` 是项目早期名称留下的兼容性前缀，当前仍被代码、CI 和已有 `.env` 使用。品牌调整阶段不立即改名，以免破坏现有部署；后续可提供 `BLUEHARBOR_*` 别名并分阶段弃用旧前缀。
 
-```powershell
-uvicorn app.main:app --reload --port 8000
-```
+常用配置包括：
 
-At startup, `data/knowledge_base.md` (sample knowledge base, 7 chunks) is imported automatically.
+- `AIROBOT_USE_CREW`：是否优先使用 CrewAI；
+- `AIROBOT_HYBRID_ENABLED`：是否启用混合检索；
+- `AIROBOT_RERANK_ENABLED`：是否启用语义重排；
+- `AIROBOT_VECTOR_STORE`：`inmemory` 或 `milvus`；
+- `AIROBOT_RATELIMIT_PER_MINUTE`：单 IP 每分钟请求限制；
+- `AIROBOT_CACHE_ENABLED`：是否启用语义缓存；
+- `AIROBOT_MEMORY_MAX_TURNS`：每个会话保留的最大轮数。
 
-### 4. Verify
+完整配置及说明见 [.env.example](.env.example)。
 
-```powershell
-# Health check
-Invoke-RestMethod http://localhost:8000/health
+## 知识库
 
-# Runtime metrics (knowledge-base chunk count / cache / rate limit, etc.)
-Invoke-RestMethod http://localhost:8000/api/v1/stats
-
-# Knowledge QA (RAG)
-$body = @{ message = "How do I apply for a refund?"; session_id = "user-001" } | ConvertTo-Json
-Invoke-RestMethod -Uri http://localhost:8000/api/v1/chat -Method Post -Body $body -ContentType "application/json"
-```
-
-## API Documentation
-
-> Interactive API docs: after startup, visit <http://localhost:8000/docs> (Swagger UI, auto-generated).
-
-### GET /health
-
-Health check; returns the current model configuration. No parameters.
-
-```json
-{"status": "ok", "llm_model": "qwen2.5:1.5b", "embedding_model": "nomic-embed-text"}
-```
-
-### POST /api/v1/chat
-
-Intelligent chat (intent routing + RAG + tools). Request body:
-
-```json
-{
-  "message": "Who pays the return shipping fee?",
-  "session_id": "user-001"
-}
-```
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| message | string | Yes | User message |
-| session_id | string | No | Session identifier, default `default`; the same ID automatically carries multi-turn context |
-
-Response 200:
-
-```json
-{
-  "reply": "According to the platform rules, if a return is caused by product quality issues or mismatch with the description, the seller bears the shipping cost; if the buyer returns it for personal reasons, the buyer bears the cost.",
-  "intent": "knowledge",
-  "sources": ["knowledge_base.md#4", "knowledge_base.md#3"],
-  "engine": "langchain",
-  "used_crew": false,
-  "cache_hit": false
-}
-```
-
-| Field | Description |
-|---|---|
-| reply | Customer service response |
-| intent | `knowledge` (knowledge QA) / `order` (order inquiry) / `chat` (casual chat) / `crew` (multi-agent) |
-| sources | RAG source list (`file#chunk_number`); empty for non-knowledge responses |
-| engine | `langchain` (built-in router) / `crew` (multi-agent) |
-| used_crew | Whether CrewAI was actually used for this request |
-| cache_hit | Whether the semantic cache was hit (on hit, the whole response is reused and returned within milliseconds) |
-
-Error responses: `429` (rate limit, `{"detail":"Too many requests, please try again later."}`), `500` (unified exception handling).
-
-### POST /api/v1/chat/stream
-
-SSE streaming chat. The request body is the same as `/api/v1/chat`. The response is `text/event-stream`, with the following event sequence:
+当前示例知识位于 `data/knowledge_base.md`，服务启动时会自动导入。按照 BlueHarbor 业务背景，建议逐步拆分为：
 
 ```text
-data: {"type":"stage","stage":"rate_limit","msg":"Rate-limit check passed, request entered the service","ms":0,"ok":true}
-data: {"type":"stage","stage":"cache","msg":"Semantic cache miss","ms":21.4,"ok":true}
-data: {"type":"intent","intent":"knowledge"}
-data: {"type":"stage","stage":"intent","msg":"Intent identified as knowledge","ms":547.2,"ok":true}
-data: {"type":"stage","stage":"retrieval","msg":"Hybrid retrieval completed","ms":2138.1,
-       "detail":{"vector_ms":22.2,"vector_hits":7,"bm25_ms":0.1,"bm25_hits":6,
-                 "fusion_ms":0.0,"fused":7,"rerank_ms":2115.4,"rerank_enabled":true},
-       "sources":["knowledge_base.md#0"],"ok":true}
-data: {"type":"token","content":"According to the platform rules, "}
-data: {"type":"token","content":"if the product has quality issues..."}
-...
-data: {"type":"stage","stage":"generate","msg":"RAG generation completed (53 tokens)","ms":517.4,"ok":true}
-data: {"type":"done","intent":"knowledge","sources":["knowledge_base.md#4"],"total_ms":3225.6}
+data/
+  products/
+    camping-light.md
+    backpack.md
+  policies/
+    shipping.md
+    returns.md
+    warranty.md
+    privacy.md
+  operations/
+    escalation.md
+    damaged-item.md
 ```
 
-- The `stage` events include per-stage status / latency / details; during retrieval they further break down vector / BM25 / RRF / rerank timings and hit counts for end-to-end dashboard visualization.
-- On semantic cache hit: before `intent`, the `cache` stage includes `hit: true`, followed by a single `token` (the full reused answer) + `done` with `cache_hit: true`.
-- For `intent=order`, the `tool` stage indicates the tool invocation, and a single `token` returns the tool result.
-- On exception: `stage.error` + `token` carrying the error message + `done`.
+每份业务文档应增加版本、生效日期、负责人和适用地区，从而测试政策更新、缓存失效和答案可追溯性。
 
-### POST /api/v1/ingest
+## 测试与评测
 
-Upload a document into the knowledge base (multipart form, field name `file`). Supports `.pdf / .docx / .md / .txt / .markdown`.
+语法和现有离线测试：
 
 ```powershell
-curl.exe -X POST http://localhost:8000/api/v1/ingest -F "file=@data/knowledge_base.md"
+python -m compileall -q app eval scripts tests
+python tests/test_stability.py
+python tests/test_tracing.py
 ```
 
-```json
-{"file_name": "knowledge_base.md", "chunks": 7, "total_chunks": 14}
-```
-
-### GET /api/v1/stats
-
-Runtime metrics: knowledge-base chunk count, LLM / embedding models, multi-agent availability, hybrid retrieval / reranker switches, cache enabled state and hit statistics, rate-limit config, and blocked-request counts. This is one of the dashboard data sources.
-
-### GET /api/v1/traces
-
-Tracing data: stage latencies (cache / intent / retrieval / generation) for the most recent N requests (default 50) + aggregated statistics (P95, average latency, cache hit rate, rate-limit blocks, intent distribution).
-
-### GET /dashboard
-
-Visualization dashboard (open in browser), described in the next section.
-
-## Visualization Dashboard
-
-After starting the service, open <http://localhost:8000/dashboard> (self-contained single page, no external CDN dependency):
-
-- **Simulated user chat**: directly simulate user questions in the dashboard (SSE streaming output, supports switching `session_id` to simulate multiple users, includes built-in quick questions).
-- **End-to-end visualization**: during each conversation, it displays `rate-limit check -> semantic cache -> intent recognition -> hybrid retrieval -> tool / generation -> memory / cache write` with stage status and latency in real time; retrieval is further broken down into vector / BM25 / RRF / reranking.
-- **Status cards**: service health / LLM / embedding / knowledge-base chunks / cache hit rate / P95 latency / rate-limit blocks / total requests.
-- **Feature guide**: one-line descriptions of 16 capabilities for quickly understanding what the service can do.
-- **Real-time execution monitoring**: stage-latency breakdown (cache lookup / retrieval / intent / generation) and status code for each conversation request; bar-style trend of total latency for the latest 20 requests (auto-refresh every 3 seconds).
-- Data sources: `GET /api/v1/traces` + `GET /api/v1/stats`; monitoring endpoints are exempt from business rate limiting.
-
-## Docker Deployment
-
-> Docker Desktop (Windows/macOS) or Docker Engine (Linux) is required.
-
-### Local Ollama Mode (Default, Free and Offline)
+检索实验和评测：
 
 ```powershell
-docker compose up -d --build
-docker compose logs -f airobot
-Invoke-RestMethod http://localhost:8000/api/v1/stats
+python scripts/bench_retrieval.py --top-k 5
+python scripts/bench_splitter.py --top-k 3
+$env:AIROBOT_RERANK_ENABLED="false"
+python eval/run_eval.py --limit 5
 ```
 
-- The compose stack includes a built-in `ollama` service. Its entrypoint automatically runs `ollama pull` for the model configured in `.env`, so the first startup may be slow.
-- Inside the container, the LLM / embedding endpoints automatically point to `http://ollama:11434/v1` (resolved by service name, no need to modify `.env`).
-- `./data` is mounted as a volume (hot updates for the knowledge base), and the `hf-cache` volume reuses downloaded reranker model cache.
+`eval/dataset/qa.jsonl` 包含 52 条示例。Shopify 接入后应新增真实业务回归集，至少覆盖：
 
-### Cloud API Mode
+- 正确和错误订单归属；
+- 不存在、取消和已退款订单；
+- Webhook 重放和乱序；
+- Shopify、LLM 和 Embedding 超时或限流；
+- Prompt injection 和敏感信息请求；
+- 政策更新后的缓存与引用一致性。
 
-Edit `docker-compose.yml`, change the two `AIROBOT_*_BASE_URL` values for `airobot` to DashScope endpoints, fill the API key in `.env`, optionally remove the `ollama` service, and then rerun `docker compose up -d --build`.
+## 安全边界
 
-### Build Acceleration
+当前版本尚未完成生产安全要求：
 
-- pip uses the Tsinghua mirror by default (`ARG PIP_INDEX_URL` can be overridden with Alibaba Cloud or another mirror).
-- `--mount=type=cache` reuses pip download cache: changing only code leads to near-instant rebuilds; changing dependencies downloads only newly added packages.
-- If pulling the base image is slow: in Docker Desktop -> Settings -> Docker Engine, configure `registry-mirrors` (for example `["https://docker.m.daocloud.io", "https://dockerproxy.com"]`). Base images only need to be pulled once.
+- `/ingest`、`/stats`、`/traces` 和 Dashboard 尚无鉴权；
+- 上传接口尚无文件大小和解析超时限制；
+- 会话、缓存、限流和默认向量库均为进程内状态；
+- 订单工具返回 Mock 数据；
+- 尚无客户身份及订单归属验证；
+- 尚无高风险业务动作审批队列。
 
-## CI Gates
+接入 Shopify 时，模型不得直接持有 Shopify 管理凭据。模型只能调用后端定义的窄工具。退款、取消订单、修改地址、补发和删除客户数据等操作必须默认进入人工审批。
 
-`.github/workflows/ci.yml`: on push / PR, three sequential jobs run automatically.
-
-| Job | Content | Notes |
-|---|---|---|
-| `build` | `pip install` + `py_compile` syntax check | Mandatory |
-| `test` | Offline unit tests for reliability engineering + service import smoke test | Mandatory |
-| `eval` | RAGAS smoke evaluation on the first 5 samples | Enabled after configuring secrets |
-
-Configure repository secrets (Settings -> Secrets and variables -> Actions): `AIROBOT_LLM_API_KEY`, `AIROBOT_EMBEDDING_API_KEY`. If they are not configured, `eval` is skipped automatically, while `build` and `test` still remain enforced. Evaluation reports are uploaded as workflow artifacts.
-
-## Evaluation (RAGAS)
-
-```powershell
-# Smoke test: first 5 samples
-$env:AIROBOT_RERANK_ENABLED="false"; python eval\run_eval.py --limit 5
-# Full 52 samples (four RAGAS metrics + Judge + baseline)
-python eval\run_eval.py
-```
-
-- Evaluation set: `eval/dataset/qa.jsonl` (52 samples, 8 topics, including negative examples not covered by the knowledge base)
-- Metrics: RAGAS Faithfulness / AnswerRelevancy / ContextPrecision / ContextRecall + LLM-as-Judge (1–5) + keyword-hit baseline
-- Output: console tables + `eval/reports/report_<timestamp>.json` / `.md` (score bands + low-scoring samples)
-- Note: ragas 0.3.9 should be paired with `langchain-community==0.3.31` (see `requirements-eval.txt`)
-
-## Retrieval and Chunking Experiments
-
-```powershell
-python scripts\bench_retrieval.py --top-k 5     # hit rate and latency for vector / bm25 / hybrid_rrf / hybrid_rerank
-python scripts\bench_splitter.py --top-k 3      # retrieval hit rate under different chunking parameters
-python scripts\ingest.py data\knowledge_base.md # CLI ingest for knowledge files (standalone process)
-```
-
-Reference measurement (52-sample evaluation set, top-k=2): vector 67% -> bm25 98% / hybrid_rrf 98%, demonstrating the necessity of hybrid retrieval.
-
-## Design Decisions
-
-- **Why maintain two implementations (CrewAI + built-in routing)?** A multi-agent framework is the orchestration layer, while business tools are the execution layer. If the framework is unavailable or incompatible by version, the service degrades to an equivalent internal router to preserve availability.
-- **How is RAG quality ensured?** Through chunking parameters, Top-K, prompt constraints, a RAGAS evaluation loop, and comparative experiment data on hybrid retrieval / reranking.
-- **How does the semantic cache avoid false positives?** It uses dual thresholds of cosine similarity + jieba lexical overlap, caches only first-turn no-context questions, excludes dynamic data (orders), and exposes hits via the `cache_hit` field.
-- **How can order queries connect to real data?** It is currently Mock. Two production approaches:
-  - Option A (Java-side routing): after recognizing `intent=order`, the business backend queries orders itself.
-  - Option B (AI-side invocation): modify the `airobot` order tool to call an order server over HTTP (configure `AIROBOT_ORDER_API_URL` + timeout fallback).
-- **How can in-memory components be productionized?** The vector store / session memory / semantic cache / rate limiting are currently implemented in-process, but their interfaces are consistent with Chroma / FAISS / Milvus and Redis, so they can be replaced with minimal effort (see table below).
-
-| Current Implementation | Production Replacement |
-|---|---|
-| `InMemoryVectorStore` / Milvus (already built in, switched by `AIROBOT_VECTOR_STORE`) | Chroma / FAISS (persistence + ANN indexing, same interface and still replaceable later) |
-| In-process session memory | Redis / SQLite persistence |
-| In-process semantic cache / rate limiting | Redis (distributed cache and counters), gateway-level rate limiting |
-| No authentication | Unified gateway auth + `X-API-Key` header validation |
-| `query_order` Mock | HTTP integration with order-server (idempotency + timeout fallback) |
-
-## Project Structure
+## 项目结构
 
 ```text
-airobot/
-├── app/
-│   ├── main.py            FastAPI entry: APIs / middleware / SSE / exception handling / dashboard
-│   ├── config.py          Environment variable config (dotenv)
-│   ├── schemas.py         Request / response models
-│   ├── agents/            CrewAI orchestration (`crew.py`) and toolset (`tools.py`)
-│   ├── rag/               loader (parsing) / retriever (retrieval + generation) / lexical (BM25) / fusion (RRF) / reranker
-│   ├── services/          chat (orchestration) / memory (session) / resilience (retry) / ratelimit (rate limiting)
-│   │                      / semantic_cache (cache) / tracing (request tracing)
-│   └── static/            `dashboard.html` visualization dashboard
-├── data/                  Knowledge base files (auto-ingested on startup) and experiment-output CSVs
-├── eval/                  `run_eval.py` + `dataset/qa.jsonl` (52 samples) + `reports/`
-├── scripts/               Retrieval / chunking comparison experiments, CLI ingest
-├── tests/                 `test_stability.py` / `test_tracing.py` offline unit tests
-├── .github/workflows/     `ci.yml` (`build -> test -> eval` gates)
-├── Dockerfile / docker-compose.yml / docker-compose-milvus.yml / .dockerignore   Containerized deployment (Milvus single-container orchestration)
-├── start.ps1 / stop.ps1 / start.bat   One-click start / stop (Windows)
-├── requirements.txt       Core runtime dependencies
-├── requirements-eval.txt  RAGAS evaluation dependencies
-├── requirements-extra.txt Optional: CrewAI multi-agent + bge-reranker reranking
-└── .env.example           Environment variable template (copy to `.env` before use)
+app/
+  main.py              FastAPI、接口、中间件和 SSE
+  config.py            环境变量配置
+  agents/              CrewAI 编排和业务工具
+  rag/                 文档加载、混合检索、融合与重排
+  services/            聊天、记忆、重试、限流、缓存和追踪
+  static/dashboard.html
+data/                   示例知识库
+eval/                   评测脚本和数据集
+scripts/                检索与切分实验
+tests/                  离线单元测试
+.github/workflows/      CI
 ```
 
-## Environment Variables
+## 完成定义
 
-| Variable | Description |
-|---|---|
-| `AIROBOT_LLM_BASE_URL` / `API_KEY` / `MODEL` | LLM endpoint (OpenAI-compatible: DashScope / DeepSeek / Ollama) |
-| `AIROBOT_EMBEDDING_BASE_URL` / `API_KEY` / `MODEL` | Embedding model endpoint (DashScope `text-embedding-v4` or Ollama `nomic-embed-text`) |
-| `AIROBOT_USE_CREW` | Whether to prefer CrewAI (automatically falls back if not installed) |
-| `AIROBOT_TOP_K` / `CHUNK_SIZE` / `CHUNK_OVERLAP` | Recall count and chunking parameters |
-| `AIROBOT_HYBRID_ENABLED` / `VECTOR_TOP_K` / `BM25_TOP_K` / `FUSION_TOP_K` | Hybrid retrieval switch and recall counts for each path |
-| `AIROBOT_RERANK_ENABLED` / `RERANK_MODEL` | bge-reranker switch and model |
-| `AIROBOT_RETRY_ATTEMPTS` / `RETRY_MAX_WAIT` | Retry count and maximum backoff time |
-| `AIROBOT_RATELIMIT_ENABLED` / `RATELIMIT_PER_MINUTE` | Rate limiting switch and per-minute cap (per IP, 60-second window) |
-| `AIROBOT_CACHE_ENABLED` / `CACHE_THRESHOLD` / `CACHE_LEXICAL_THRESHOLD` / `CACHE_MAX_ENTRIES` | Semantic cache switch and dual-threshold parameters |
-| `AIROBOT_MEMORY_MAX_TURNS` / `AIROBOT_MEMORY_RETRIEVE_TURNS` | Session memory retention turns / context turns included in generation |
-| `AIROBOT_VECTOR_STORE` / `MILVUS_URI` / `MILVUS_TOKEN` / `MILVUS_COLLECTION` / `MILVUS_RESET_ON_START` | Vector backend (`inmemory` / `milvus`) and Milvus connection, collection, startup reset switch |
+当以下条件全部满足时，项目才进入可试生产状态：
 
-## FAQ
+- 订单来自 Shopify，不再依赖 Mock；
+- Webhook 具备签名验证、幂等和失败重试；
+- 客户身份与订单归属可验证；
+- 管理和上传接口有鉴权；
+- 关键业务数据持久化；
+- 高风险操作必须人工审批；
+- 日志脱敏且可通过 request ID 追踪；
+- 外部服务故障时能够安全降级；
+- 关键业务场景有自动化集成测试。
 
-**Q: Can it run without an API key?** Yes. The service itself can start normally (health checks / document parsing / retrieval all remain available), while the chat API will return a prompt saying `AIROBOT_LLM_API_KEY` is not configured. Installing local Ollama is the recommended free way to run the full pipeline.
+## License
 
-**Q: What happens if `crewai`, `ragas`, or `sentence-transformers` is not installed?** The system degrades automatically: multi-agent falls back to the built-in LangChain router, evaluation scripts require `requirements-eval.txt`, and reranking falls back to the RRF fusion order.
-
-**Q: What if reranker model download is slow or hangs?** The project already includes an HF mirror (`HF_ENDPOINT=https://hf-mirror.com`) and a local-cache-first strategy; you can also disable it with `AIROBOT_RERANK_ENABLED=false`.
-
-**Q: Do I need to rebuild the Docker image every time I change code?** No. For daily development, use the host `.venv` + `uvicorn --reload`; build the image only for release / delivery with `docker compose up -d --build` (code-only changes rebuild in seconds; see “Build Acceleration”).
-
-**Q: How can Java / Node backends call it?** Use HTTP/SSE against `/api/v1/chat` or `/api/v1/chat/stream`; see [API Documentation](#api-documentation). In production, using a gateway + internal network isolation + `X-API-Key` authentication is recommended.
+本项目使用仓库中 [LICENSE](LICENSE) 所述许可证。

@@ -1,13 +1,13 @@
 # 第 5 批：一键部署。docker compose up -d --build
-# 本地模式（默认）：airobot 容器内的 LLM/Embedding 指向 compose 内置的 ollama 服务
+# 本地模式（默认）：BlueHarbor Support 容器内的 LLM/Embedding 指向 compose 内置的 ollama 服务
 # （服务名 ollama 可被容器解析），首次启动自动 pull 模型（qwen2.5:3b / nomic-embed-text）。
-# 云端模式：把 airobot.environment 里两个 *_BASE_URL 改成
+# 云端模式：把 blueharbor-support.environment 里两个 *_BASE_URL 改成
 #   https://dashscope.aliyuncs.com/compatible-mode/v1 并去掉 ollama 服务即可。
 services:
-  airobot:
+  blueharbor-support:
     build: .
-    image: airobot:latest
-    container_name: airobot
+    image: blueharbor-support:latest
+    container_name: blueharbor-support
     ports:
       - "8000:8000"
     env_file:
