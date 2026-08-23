@@ -476,8 +476,3 @@ airobot/
 **Q: Do I need to rebuild the Docker image every time I change code?** No. For daily development, use the host `.venv` + `uvicorn --reload`; build the image only for release / delivery with `docker compose up -d --build` (code-only changes rebuild in seconds; see “Build Acceleration”).
 
 **Q: How can Java / Node backends call it?** Use HTTP/SSE against `/api/v1/chat` or `/api/v1/chat/stream`; see [API Documentation](#api-documentation). In production, using a gateway + internal network isolation + `X-API-Key` authentication is recommended.
-
-## License
-
-This project is licensed under the [MIT License](LICENSE) (Copyright (c) 2026 Liu Bojiang).
-MIT is one of the most permissive open-source licenses: anyone may use, modify, and distribute it (including for commercial use), as long as the copyright notice is retained.
