@@ -1,4 +1,4 @@
-# AI Robot Intelligent Customer Service Platform (FastAPI + LangChain RAG + CrewAI Multi-Agent)
+# AI Robot Intelligent Customer Service Platform (FastAPI + LangChain RAG + CrewAI Multi-Agent) (Simplified and self-replicated version from Allianz Q4 Intern Project)
 
 A production-ready **complete intelligent customer service platform** built with **FastAPI + LangChain RAG + CrewAI multi-agent orchestration**.
 It provides core customer-service capabilities such as intent-routing, knowledge-base question answering, multi-agent collaboration, and SSE streaming chat. It also includes retrieval engineering (BM25 + RRF + reranker), reliability engineering (retries / rate limiting / semantic cache), observability (real-time monitoring dashboard), and an evaluation framework (RAGAS closed loop). It can be deployed directly to production or integrated as an independent AI service into existing business systems (such as Spring Cloud or Node.js backends) over HTTP/SSE.
