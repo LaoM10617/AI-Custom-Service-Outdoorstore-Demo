@@ -5,8 +5,6 @@ It provides core customer-service capabilities such as intent-routing, knowledge
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.110%2B-009688)
-![License](https://img.shields.io/badge/License-MIT-green)
-[![CI](https://github.com/liubaijiangde-bot/AI-Robot-FastAPI-LangChain-RAG-CrewAI-Agent-/actions/workflows/ci.yml/badge.svg)](https://github.com/liubaijiangde-bot/AI-Robot-FastAPI-LangChain-RAG-CrewAI-Agent-/actions/workflows/ci.yml)
 
 ## Table of Contents
 
