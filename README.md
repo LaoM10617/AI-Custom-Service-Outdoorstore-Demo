@@ -263,7 +263,3 @@ The project should only be considered ready for pre-production when all of the f
 - Logs are redacted and traceable through request IDs.
 - The system can degrade safely when external services fail.
 - Key business scenarios are covered by automated integration tests.
-
-## License
-
-This project uses the license described in [LICENSE](LICENSE) in the repository.
