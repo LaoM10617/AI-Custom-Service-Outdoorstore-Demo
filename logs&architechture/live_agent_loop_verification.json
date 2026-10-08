@@ -1,0 +1,170 @@
+{
+  "model": "gemini-3.8-flash",
+  "source": "real dashboard SSE request",
+  "status": "review_approved · 3 model calls · 16.2s",
+  "reply": "Demo response — simulated order and policy data.\n\nI have located your order **BH-1003** for the DryTrail 28L Backpack. \n\nHere is what you need to know and the next steps:\n\n* **Policy & Return Shipping:** While unused-goods returns must be submitted within 30 days, our policy does not specify a deadline for reporting damaged items. If the damage is confirmed upon review, return shipping is paid by the seller.\n* **Human Review Required:** Reported defects require a human support review to determine fault and approve replacements or refunds. Photos of the broken zipper may be requested.\n* **What you can do:** Please hold onto the backpack and its original packaging, and have photos of the broken zipper ready. Note that I am an automated assistant and cannot create tickets, inspect photos, or process refunds or replacements directly, so a human representative will need to review your claim.",
+  "run": {
+    "message": "My backpack order BH-1003 arrived with a broken zip. What can I do?",
+    "session_id": "live-browser-verification",
+    "status": 200,
+    "intent": "support",
+    "engine": "agent_loop",
+    "total_ms": 16160,
+    "run_id": "888cac6f1556478c8a9dd036da0c3fd9",
+    "stop_reason": "review_approved",
+    "agent_events": [
+      {
+        "type": "agent_event",
+        "run_id": "888cac6f1556478c8a9dd036da0c3fd9",
+        "sequence": 1,
+        "agent": "investigator",
+        "kind": "started",
+        "model_calls": 0,
+        "elapsed_ms": 0,
+        "message": "Support Investigator started"
+      },
+      {
+        "type": "agent_event",
+        "run_id": "888cac6f1556478c8a9dd036da0c3fd9",
+        "sequence": 2,
+        "agent": "investigator",
+        "kind": "model_call",
+        "model_calls": 1,
+        "elapsed_ms": 1,
+        "message": "Selecting the next action"
+      },
+      {
+        "type": "agent_event",
+        "run_id": "888cac6f1556478c8a9dd036da0c3fd9",
+        "sequence": 3,
+        "agent": "investigator",
+        "kind": "tool_call",
+        "model_calls": 1,
+        "elapsed_ms": 3145,
+        "tool": "get_order",
+        "arguments": {
+          "order_id": "BH-1003"
+        },
+        "message": "Calling read-only tool"
+      },
+      {
+        "type": "agent_event",
+        "run_id": "888cac6f1556478c8a9dd036da0c3fd9",
+        "sequence": 4,
+        "agent": "investigator",
+        "kind": "tool_result",
+        "model_calls": 1,
+        "elapsed_ms": 3145,
+        "tool": "get_order",
+        "result": {
+          "simulated": true,
+          "source": "data/mock_orders.json",
+          "found": true,
+          "order": {
+            "order_id": "BH-1003",
+            "simulated": true,
+            "snapshot_date": "2026-10-08",
+            "sku": "BH-BPK-28-NVY",
+            "product": "DryTrail 28L Backpack",
+            "quantity": 1,
+            "currency": "EUR",
+            "total": "69.99",
+            "status": "delivered",
+            "payment_status": "paid",
+            "fulfillment_status": "delivered",
+            "refund_status": "none",
+            "tracking_number": "DEMO-TRACK-1003",
+            "note": "Demo delivery recorded on 2026-10-06. A reported defect still requires human review."
+          },
+          "order_id": "BH-1003"
+        },
+        "message": "Evidence received"
+      },
+      {
+        "type": "agent_event",
+        "run_id": "888cac6f1556478c8a9dd036da0c3fd9",
+        "sequence": 5,
+        "agent": "investigator",
+        "kind": "tool_call",
+        "model_calls": 1,
+        "elapsed_ms": 3145,
+        "tool": "read_knowledge",
+        "arguments": {
+          "section": "returns"
+        },
+        "message": "Calling read-only tool"
+      },
+      {
+        "type": "agent_event",
+        "run_id": "888cac6f1556478c8a9dd036da0c3fd9",
+        "sequence": 6,
+        "agent": "investigator",
+        "kind": "tool_result",
+        "model_calls": 1,
+        "elapsed_ms": 3154,
+        "tool": "read_knowledge",
+        "result": {
+          "simulated": true,
+          "source": "data/knowledge_base.md#returns",
+          "text": "These are fictional demo rules, not legal advice or a real merchant policy.\nFor this demo, unused physical goods with their accessories and packaging can be submitted for return review within 30 days of recorded delivery. Digital downloads are referred to human support for individual review.\nThe 30-day window above concerns unused-goods returns. This demo does not specify a separate deadline for damaged-item claims; do not infer one from the unused-goods rule.\nFor damaged or incorrect items, ask for the order ID and a description of the problem. Photos may be requested by a human reviewer; this application does not inspect photos or determine fault. In this demo policy, confirmed damage or an incorrect item qualifies for seller-paid return shipping; a change-of-mind return uses customer-paid shipping.\nRefunds, replacements, cancellations and address changes require a human decision. The current application can explain policies and read simulated orders, but cannot create tickets, approve refunds, send emails or modify orders. Do not claim an action was completed."
+        },
+        "message": "Evidence received"
+      },
+      {
+        "type": "agent_event",
+        "run_id": "888cac6f1556478c8a9dd036da0c3fd9",
+        "sequence": 7,
+        "agent": "investigator",
+        "kind": "model_call",
+        "model_calls": 2,
+        "elapsed_ms": 3155,
+        "message": "Selecting the next action"
+      },
+      {
+        "type": "agent_event",
+        "run_id": "888cac6f1556478c8a9dd036da0c3fd9",
+        "sequence": 8,
+        "agent": "reviewer",
+        "kind": "handoff",
+        "model_calls": 2,
+        "elapsed_ms": 10662,
+        "message": "Investigator sent its draft and evidence to Evidence Reviewer"
+      },
+      {
+        "type": "agent_event",
+        "run_id": "888cac6f1556478c8a9dd036da0c3fd9",
+        "sequence": 9,
+        "agent": "reviewer",
+        "kind": "model_call",
+        "model_calls": 3,
+        "elapsed_ms": 10662,
+        "message": "Selecting the next action"
+      },
+      {
+        "type": "agent_event",
+        "run_id": "888cac6f1556478c8a9dd036da0c3fd9",
+        "sequence": 10,
+        "agent": "reviewer",
+        "kind": "review",
+        "model_calls": 3,
+        "elapsed_ms": 16159,
+        "decision": "approve",
+        "message": "The draft accurately reflects order BH-1003 details and demo return policy regarding damaged goods, correctly notes that damage reporting deadlines are unspecified, includes demo/simulation framing, and properly states system limitations without claiming unsupported actions."
+      },
+      {
+        "type": "agent_event",
+        "run_id": "888cac6f1556478c8a9dd036da0c3fd9",
+        "sequence": 11,
+        "agent": "reviewer",
+        "kind": "completed",
+        "model_calls": 3,
+        "elapsed_ms": 16159,
+        "message": "Response text approved; no business action executed"
+      }
+    ],
+    "model_calls": 3,
+    "tool_calls": 2,
+    "cache_checked": false,
+    "ts": 1791464882.067526
+  }
+}

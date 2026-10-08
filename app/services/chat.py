@@ -25,12 +25,12 @@ logger = logging.getLogger("airobot.chat")
 
 INTENT_PROMPT = ChatPromptTemplate.from_messages([
     ("system",
-     "你是意图分类器，只输出 JSON：{{\"intent\": \"knowledge|order|chat\", \"reason\": \"简短理由\"}}"),
+     "Classify a BlueHarbor support message. Use order for a specific order, shipment, payment or refund status, including any BH- order ID; knowledge for product or general policy questions; chat for greetings. Output only JSON: {{\"intent\": \"knowledge|order|chat\", \"reason\": \"brief English reason\"}}"),
     ("human", "{message}"),
 ])
 
 CHAT_PROMPT = ChatPromptTemplate.from_messages([
-    ("system", "你是二手交易平台的智能客服，语气友好简洁；涉及订单或平台规则时引导用户使用对应功能。"),
+    ("system", "You are the English-speaking support assistant for BlueHarbor, a fictional outdoor retailer. Be concise and friendly. Do not invent products, policies or order facts. Direct factual questions to the knowledge or order tools. You cannot refund, cancel, notify staff or create tickets. Use neutral business wording without implementation labels. Records are local samples; answer truthfully if explicitly asked about data provenance."),
     MessagesPlaceholder("history"),
     ("human", "{message}"),
 ])
@@ -81,13 +81,16 @@ def _maybe_cache(query_vec: list | None, result: dict, message: str = "") -> Non
         semantic_cache.put(query_vec, result, message)
 
 
-async def chat(message: str, session_id: str = "default") -> dict:
+async def chat(message: str, session_id: str = "default", document_ids=None) -> dict:
     """对话入口：CrewAI 优先（线程池执行），失败自动降级内置路由；成功后写入会话记忆。"""
+    if settings.agent_engine == "loop":
+        from app.services.agent_chat import agent_chat
+        return await agent_chat(message, session_id, document_ids)
     entry = {"message": message[:80], "session_id": session_id, "status": 200}
     t_start = time.perf_counter()
     if not settings.llm_api_key:
         traces.record({**entry, "intent": "no-key", "total_ms": 0.0})
-        return {"reply": "未配置 AIROBOT_LLM_API_KEY，请复制 .env.example 为 .env 并填入密钥。",
+        return {"reply": "AIROBOT_LLM_API_KEY is not configured. Copy .env.example to .env and configure the model service.",
                 "intent": None, "sources": [], "engine": "langchain"}
 
     # 语义缓存：仅无上下文的首轮问题参与命中/写入（避免与会话记忆耦合）

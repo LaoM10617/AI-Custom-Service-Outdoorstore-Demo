@@ -1,0 +1,25 @@
+{
+  "review_approved": true,
+  "reply": "The status of order UP-2001 is delivered (BlueHarbor-Orders.csv, record 1).\n\nUnused items in their original packaging may be returned within 45 days of delivery (BlueHarbor-Returns-Policy.pdf, page 1).",
+  "citations": [
+    {
+      "source": "BlueHarbor-Orders.csv \u8def record 1",
+      "url": "/api/v1/documents/56a0e5de6c844178af29382f17fe4e8c/records/1",
+      "document_id": "56a0e5de6c844178af29382f17fe4e8c"
+    },
+    {
+      "source": "BlueHarbor-Returns-Policy.pdf \u8def page 1",
+      "url": "/api/v1/documents/310178f889dd42198c57578e96d91f9a/file#page=1",
+      "document_id": "310178f889dd42198c57578e96d91f9a"
+    }
+  ],
+  "model_calls": 3,
+  "tool_calls": 2,
+  "total_ms": 11118,
+  "upload_reload": true,
+  "source_links": true,
+  "browser_errors": [],
+  "mobile_overflow": false,
+  "backend_restart_persistence": true,
+  "verification_files_archived": true
+}

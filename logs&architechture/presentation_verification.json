@@ -1,0 +1,6 @@
+{
+  "status": "review_approved · 3 model calls · 8.9s",
+  "reply": "Order BH-1002 is currently in transit. \n\n* **Status:** Shipped / In transit\n* **Tracking Number:** BH-TRACK-1002\n* **Estimated Arrival:** October 10, 2026\n* **Item:** TrailSip Water Bottle (Quantity: 1)",
+  "errors": [],
+  "checks": "Both animation scenarios, dashboard title and all visible content, real Gemini answer and activity"
+}

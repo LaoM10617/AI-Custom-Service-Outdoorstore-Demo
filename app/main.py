@@ -21,6 +21,7 @@ from app.services.chat import CHAT_PROMPT, chat, classify_intent
 from app.services.ratelimit import limiter
 from app.services.semantic_cache import semantic_cache
 from app.services.tracing import traces
+from app.library.routes import router as library_router
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 logger = logging.getLogger("blueharbor.support")
@@ -30,7 +31,7 @@ logger = logging.getLogger("blueharbor.support")
 async def lifespan(_: FastAPI):
     """启动时自动导入示例知识库，保证开箱即用。"""
     sample = BASE_DIR / "data" / "knowledge_base.md"
-    if sample.exists() and kb.chunk_count == 0:
+    if settings.agent_engine != "loop" and sample.exists() and kb.chunk_count == 0:
         try:
             kb.ingest_file(sample)
         except Exception as exc:
@@ -43,6 +44,9 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+
+app.include_router(library_router)
 
 
 @app.middleware("http")
@@ -68,7 +72,7 @@ async def rate_limit_middleware(request: Request, call_next):
             traces.record({"message": f"{request.method} {request.url.path}",
                            "session_id": client_ip, "intent": "ratelimited",
                            "status": 429, "cache_checked": False, "total_ms": 0.0})
-            return JSONResponse(status_code=429, content={"detail": "请求过于频繁，请稍后再试。"})
+            return JSONResponse(status_code=429, content={"detail": "Too many requests. Please try again later."})
     return await call_next(request)
 
 
@@ -76,12 +80,12 @@ async def rate_limit_middleware(request: Request, call_next):
 async def unhandled_exception_handler(request: Request, exc: Exception):
     """统一异常兜底：非流式接口返回 JSON 500，避免堆栈泄露给客户端。"""
     logger.exception("未处理异常: %s %s", request.method, request.url.path)
-    return JSONResponse(status_code=500, content={"detail": "服务内部错误，请稍后重试。"})
+    return JSONResponse(status_code=500, content={"detail": "Internal service error. Please try again later."})
 
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "llm_model": settings.llm_model,
+    return {"status": "ok", "agent_engine": settings.agent_engine, "llm_model": settings.llm_model,
             "embedding_model": settings.embedding_model}
 
 
@@ -116,6 +120,13 @@ def dashboard():
     return HTMLResponse(html)
 
 
+@app.get("/agent-workflow")
+@app.get("/agent-demo")
+def agent_demo():
+    """Serve the independently labeled multi-agent animation."""
+    return HTMLResponse((BASE_DIR / "demo" / "agent-loop.html").read_text(encoding="utf-8"))
+
+
 @app.get("/api/v1/traces")
 def traces_api(limit: int = 50):
     """链路追踪：最近请求各阶段耗时 + 聚合统计（P95 / 缓存命中率 / 限流拦截数）。"""
@@ -125,10 +136,10 @@ def traces_api(limit: int = 50):
 @app.post("/api/v1/ingest", response_model=IngestResponse)
 async def ingest(file: UploadFile = File(...)):
     if not settings.embedding_api_key:
-        raise HTTPException(status_code=400, detail="未配置 AIROBOT_EMBEDDING_API_KEY，无法向量化入库")
+        raise HTTPException(status_code=400, detail="AIROBOT_EMBEDDING_API_KEY is not configured; document ingestion is unavailable.")
     suffix = Path(file.filename or "").suffix.lower()
     if suffix not in (".pdf", ".docx", ".md", ".txt", ".markdown"):
-        raise HTTPException(status_code=400, detail="仅支持 pdf / docx / md / txt")
+        raise HTTPException(status_code=400, detail="Supported formats: pdf / docx / md / txt")
     content = await file.read()
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
         tmp.write(content)
@@ -136,7 +147,7 @@ async def ingest(file: UploadFile = File(...)):
     try:
         chunks = kb.ingest_file(tmp_path)
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"解析失败: {exc}") from exc
+        raise HTTPException(status_code=500, detail=f"Document parsing failed: {exc}") from exc
     finally:
         tmp_path.unlink(missing_ok=True)
     return IngestResponse(file_name=file.filename or "unknown",
@@ -145,7 +156,7 @@ async def ingest(file: UploadFile = File(...)):
 
 @app.post("/api/v1/chat", response_model=ChatResponse)
 async def chat_ep(req: ChatRequest):
-    result = await chat(req.message, req.session_id)
+    result = await chat(req.message, req.session_id, req.document_ids)
     return ChatResponse(
         reply=result["reply"],
         intent=result.get("intent"),
@@ -153,6 +164,13 @@ async def chat_ep(req: ChatRequest):
         engine=result.get("engine", "langchain"),
         used_crew=result.get("used_crew", False),
         cache_hit=result.get("cache_hit", False),
+        citations=result.get("citations", []),
+        run_id=result.get("run_id"),
+        stop_reason=result.get("stop_reason"),
+        review_approved=result.get("review_approved", False),
+        events=result.get("events", []),
+        model_calls=result.get("model_calls", 0),
+        tool_calls=result.get("tool_calls", 0),
     )
 
 
@@ -164,12 +182,25 @@ def _sse(payload: dict) -> str:
 async def chat_stream(req: ChatRequest):
     """SSE 流式对话：意图 -> (RAG/闲聊) 逐 token 输出；订单查询整段返回；带会话记忆。"""
 
+    if settings.agent_engine == "loop":
+        from app.services.agent_chat import agent_events
+
+        async def stream_agents():
+            async for event in agent_events(req.message, req.session_id, req.document_ids):
+                if event["type"] == "result":
+                    yield _sse({"type": "token", "content": event["reply"]})
+                    yield _sse({**event, "type": "done"})
+                else:
+                    yield _sse(event)
+
+        return StreamingResponse(stream_agents(), media_type="text/event-stream")
+
     async def _error(message: str):
         yield _sse({"type": "token", "content": message})
         yield _sse({"type": "done"})
 
     if not settings.llm_api_key:
-        return StreamingResponse(_error("未配置 AIROBOT_LLM_API_KEY，请复制 .env.example 为 .env。"),
+        return StreamingResponse(_error("AIROBOT_LLM_API_KEY is not configured. Copy .env.example to .env and configure the model service."),
                                  media_type="text/event-stream")
 
     from langchain_core.output_parsers import StrOutputParser
@@ -184,12 +215,12 @@ async def chat_stream(req: ChatRequest):
                  "status": 200, "engine": "sse"}
         try:
             yield _sse({"type": "stage", "stage": "rate_limit",
-                        "msg": "限流检查通过，请求进入服务", "ms": 0.0, "ok": True})
+                        "msg": "Rate-limit check passed", "ms": 0.0, "ok": True})
             history = memory.get_messages(req.session_id)
             query_vec = None
             if settings.cache_enabled and settings.embedding_api_key and not history:
                 t_cache = time.perf_counter()
-                yield _sse({"type": "stage", "stage": "cache", "msg": "语义缓存查询中…", "ms": 0.0})
+                yield _sse({"type": "stage", "stage": "cache", "msg": "Checking semantic cache…", "ms": 0.0})
                 query_vec = await asyncio.to_thread(kb.embed_query, req.message)
                 cached = semantic_cache.get(query_vec, req.message)
                 cache_ms = round((time.perf_counter() - t_cache) * 1000, 1)
@@ -199,21 +230,21 @@ async def chat_stream(req: ChatRequest):
                     entry.update(cache_hit=True, intent=cached.get("intent"), tokens=1,
                                  total_ms=round((time.perf_counter() - t_start) * 1000, 1))
                     traces.record(entry)
-                    yield _sse({"type": "stage", "stage": "cache", "msg": "语义缓存命中，直接返回",
+                    yield _sse({"type": "stage", "stage": "cache", "msg": "Semantic cache hit; returning stored answer",
                                 "ms": cache_ms, "hit": True, "ok": True})
                     yield _sse({"type": "intent", "intent": cached.get("intent")})
                     yield _sse({"type": "token", "content": cached["reply"]})
-                    yield _sse({"type": "stage", "stage": "write", "msg": "命中缓存，无需写入",
+                    yield _sse({"type": "stage", "stage": "write", "msg": "Cache hit; no write needed",
                                 "ms": 0.0, "ok": True})
                     yield _sse({"type": "done", "cache_hit": True, "intent": cached.get("intent"),
                                 "sources": cached.get("sources", []),
                                 "total_ms": entry["total_ms"]})
                     return
-                yield _sse({"type": "stage", "stage": "cache", "msg": "语义缓存未命中", "ms": cache_ms,
+                yield _sse({"type": "stage", "stage": "cache", "msg": "Semantic cache miss", "ms": cache_ms,
                             "hit": False, "ok": True})
             else:
-                reason = "未开启" if not (settings.cache_enabled and settings.embedding_api_key) else "多轮会话，跳过缓存"
-                yield _sse({"type": "stage", "stage": "cache", "msg": f"跳过语义缓存（{reason}）",
+                reason = "disabled" if not (settings.cache_enabled and settings.embedding_api_key) else "conversation in progress"
+                yield _sse({"type": "stage", "stage": "cache", "msg": f"Skipping semantic cache ({reason})",
                             "ms": 0.0, "ok": True, "skipped": True})
             t_intent = time.perf_counter()
             intent = await classify_intent(req.message)
@@ -221,7 +252,7 @@ async def chat_stream(req: ChatRequest):
             entry["intent_ms"] = intent_ms
             entry["intent"] = intent
             yield _sse({"type": "intent", "intent": intent})
-            yield _sse({"type": "stage", "stage": "intent", "msg": f"意图识别为 {intent}",
+            yield _sse({"type": "stage", "stage": "intent", "msg": f"Intent: {intent}",
                         "intent": intent, "ms": intent_ms, "ok": True})
 
             if intent == "order":
@@ -229,7 +260,7 @@ async def chat_stream(req: ChatRequest):
                 reply = query_order(req.message)
                 tool_ms = round((time.perf_counter() - t_tool) * 1000, 1)
                 yield _sse({"type": "stage", "stage": "tool", "tool": "query_order",
-                            "msg": "调用订单查询工具 query_order", "ms": tool_ms, "ok": True})
+                            "msg": "Reading simulated order with query_order", "ms": tool_ms, "ok": True})
                 yield _sse({"type": "token", "content": reply})
                 yield _sse({"type": "done", "intent": intent,
                             "total_ms": round((time.perf_counter() - t_start) * 1000, 1)})
@@ -246,7 +277,7 @@ async def chat_stream(req: ChatRequest):
                 entry["retrieval_ms"] = retr_ms
                 entry["retrieval_detail"] = detail
                 sources = [f"{d.metadata.get('title', '')}#{d.metadata.get('chunk', 0)}" for d in docs]
-                yield _sse({"type": "stage", "stage": "retrieval", "msg": "混合检索完成",
+                yield _sse({"type": "stage", "stage": "retrieval", "msg": "Hybrid retrieval complete",
                             "ms": retr_ms, "detail": detail, "sources": sources, "ok": True})
                 context = "\n\n".join(d.page_content for d in docs)
                 chain = RAG_PROMPT | build_llm() | StrOutputParser()
@@ -263,10 +294,10 @@ async def chat_stream(req: ChatRequest):
                 entry["llm_ms"] = llm_ms
                 entry["tokens"] = len(parts)
                 yield _sse({"type": "stage", "stage": "generate",
-                            "msg": f"RAG 生成完成（{len(parts)} tokens）", "ms": llm_ms,
+                            "msg": f"Grounded answer complete ({len(parts)} chunks)", "ms": llm_ms,
                             "tokens": len(parts), "ok": True})
                 yield _sse({"type": "stage", "stage": "write",
-                            "msg": "写入会话记忆与语义缓存", "ms": 0.0, "ok": True})
+                            "msg": "Writing session memory and semantic cache", "ms": 0.0, "ok": True})
                 yield _sse({"type": "done", "intent": intent, "sources": sources,
                             "total_ms": round((time.perf_counter() - t_start) * 1000, 1)})
                 memory.add(req.session_id, req.message, "".join(parts))
@@ -293,10 +324,10 @@ async def chat_stream(req: ChatRequest):
             entry["llm_ms"] = llm_ms
             entry["tokens"] = len(parts)
             yield _sse({"type": "stage", "stage": "generate",
-                        "msg": f"闲聊生成完成（{len(parts)} tokens）", "ms": llm_ms,
+                        "msg": f"Chat answer complete ({len(parts)} chunks)", "ms": llm_ms,
                         "tokens": len(parts), "ok": True})
             yield _sse({"type": "stage", "stage": "write",
-                        "msg": "写入会话记忆与语义缓存", "ms": 0.0, "ok": True})
+                        "msg": "Writing session memory and semantic cache", "ms": 0.0, "ok": True})
             yield _sse({"type": "done", "intent": intent,
                         "total_ms": round((time.perf_counter() - t_start) * 1000, 1)})
             memory.add(req.session_id, req.message, "".join(parts))
@@ -311,7 +342,7 @@ async def chat_stream(req: ChatRequest):
             entry.update(status=500,
                          total_ms=round((time.perf_counter() - t_start) * 1000, 1))
             traces.record(entry)
-            yield _sse({"type": "stage", "stage": "error", "msg": f"处理失败：{exc}", "ok": False})
-            yield _sse({"type": "token", "content": f"服务开小差了：{exc}"})
+            yield _sse({"type": "stage", "stage": "error", "msg": f"Request failed: {exc}", "ok": False})
+            yield _sse({"type": "token", "content": f"Service request failed: {exc}"})
             yield _sse({"type": "done"})
     return StreamingResponse(gen(), media_type="text/event-stream")

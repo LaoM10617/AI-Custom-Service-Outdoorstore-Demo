@@ -1,7 +1,6 @@
-﻿# -*- coding: utf-8 -*-
-"""CrewAI 多智能体：意图识别官 -> 客服执行员（多工具编排）。
-结构：Agent(角色/目标/背景/工具/LLM) + Task + Crew(sequential)，
-与面试叙事一致：把 C2C 客服的"意图路由+工具调用"升级为多 Agent 协作。
+# -*- coding: utf-8 -*-
+"""Optional CrewAI workflow: classify a BlueHarbor request, then use support tools.
+The framework manages execution; the separate animation is conceptual.
 """
 from app.config import settings
 
@@ -21,44 +20,44 @@ def run_crew(message: str, history_text: str = "") -> str:
         api_key=settings.llm_api_key,
         temperature=0.3,
     )
-    history_desc = f"\n对话历史：\n{history_text}" if history_text else ""
+    history_desc = f"\nConversation history:\n{history_text}" if history_text else ""
 
     router = Agent(
-        role="意图识别官",
-        goal="准确判断用户消息的意图类型",
-        backstory=("你是二手交易平台的意图识别专家，"
-                   "只输出 JSON：{{'intent': 'knowledge|order|chat', 'reason': '简短理由'}}"),
+        role="Support request classifier",
+        goal="Classify the customer request as knowledge, order or chat",
+        backstory=("You classify support requests for BlueHarbor, a fictional outdoor retailer. "
+                   "Return only JSON with intent (knowledge, order, or chat) and a brief English reason. Specific BH- order IDs and individual shipment or refund status use order; general policies use knowledge."),
         llm=llm,
         verbose=False,
     )
 
     executive = Agent(
-        role="客服执行员",
-        goal="根据意图调用对应工具，给出真实、友好、简洁的中文答复",
-        backstory=("你是二手交易平台客服，擅长用工具查订单、查知识库、讲售后规则。"
-                   "必须依据工具返回的真实数据作答，禁止编造。"),
+        role="BlueHarbor support specialist",
+        goal="Use the appropriate tools and give concise, grounded English support answers",
+        backstory=("You support BlueHarbor customers using order, knowledge and policy tools. "
+                   "Use only tool evidence. Use neutral business wording. These are local sample records, not live Shopify data; answer truthfully if asked about their provenance. Ask for missing order IDs. Never invent records or claim to refund, cancel, notify staff or create a ticket."),
         tools=[search_knowledge_tool, query_order_tool, after_sale_rule_tool],
         llm=llm,
         verbose=False,
     )
 
     task_router = Task(
-        description=f"分析用户消息：{message}（如有对话历史请结合上下文）{history_desc}。只输出意图 JSON。",
-        expected_output="JSON：intent / reason",
+        description=f"Classify this customer message: {message} (use conversation history when relevant){history_desc}. Return only intent JSON.",
+        expected_output="JSON: intent / reason",
         agent=router,
     )
     task_exec = Task(
         description=(
-            "根据意图识别官的结论处理用户消息。规则："
-            "intent=knowledge 时调用 search_knowledge 回答；"
-            "intent=order 时调用 query_order 查询订单；"
-            "涉及售后/退货时调用 after_sale_rule；"
-            "intent=chat 时直接礼貌闲聊；"
-            "结合对话历史保持上下文连贯。"
-            "最终给出面向用户的完整中文答复。"
+            "Handle the customer message using the classifier result. Rules: "
+            "For knowledge, call search_knowledge. "
+            "For order, call query_order with the customer message and exact order ID. "
+            "For returns policies, call after_sale_rule. "
+            "For chat, respond politely. "
+            "Use conversation history for continuity. "
+            "Give the customer a complete English answer. "
             f"{history_desc}"
         ),
-        expected_output="给用户的最终中文答复",
+        expected_output="Final English customer response",
         agent=executive,
     )
 

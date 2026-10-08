@@ -49,10 +49,10 @@ def format_history(messages: list[BaseMessage], max_len: int = 600) -> str:
     parts = []
     for msg in messages:
         if isinstance(msg, HumanMessage):
-            role = "用户"
+            role = "Customer"
         elif isinstance(msg, AIMessage):
-            role = "助手"
+            role = "Assistant"
         else:
-            role = "系统"
+            role = "System"
         parts.append(f"{role}: {str(msg.content)[:max_len]}")
     return "\n".join(parts)

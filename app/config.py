@@ -22,11 +22,16 @@ class Settings:
     # 大模型（OpenAI 兼容协议）
     llm_base_url: str = _env("AIROBOT_LLM_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
     llm_api_key: str = _env("AIROBOT_LLM_API_KEY")
+    # An explicitly configured key file avoids duplicating credentials in .env.
+    if not llm_api_key and _env("AIROBOT_LLM_API_KEY_FILE"):
+        llm_api_key = Path(_env("AIROBOT_LLM_API_KEY_FILE")).read_text(encoding="utf-8-sig").strip()
     llm_model: str = _env("AIROBOT_LLM_MODEL", "qwen-plus")
     # Embedding
     embedding_base_url: str = _env("AIROBOT_EMBEDDING_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
     embedding_api_key: str = _env("AIROBOT_EMBEDDING_API_KEY")
     embedding_model: str = _env("AIROBOT_EMBEDDING_MODEL", "text-embedding-v4")
+    # Explicit two-agent loop is the default; legacy preserves the previous routing.
+    agent_engine: str = _env("AIROBOT_AGENT_ENGINE", "loop").lower()
     # 智能体
     use_crew: bool = _env("AIROBOT_USE_CREW", "true").lower() == "true"
     # RAG

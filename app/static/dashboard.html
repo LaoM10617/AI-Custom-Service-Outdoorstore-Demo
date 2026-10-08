@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BlueHarbor AI Support 控制台</title>
+<title>product customer service</title>
 <style>
 :root{
   --bg:#0d1117; --card:#161b27; --card2:#1c2333; --line:#273349;
@@ -99,101 +99,117 @@ tr:hover td{background:#1a2130}
 .pstep.run .title{color:var(--accent)}
 @media(max-width:900px){.console-grid{grid-template-columns:1fr}}
 @media(max-width:720px){.cards{grid-template-columns:repeat(2,1fr)}}
+
+.library-upload{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:16px 0}
+.library-upload input{background:var(--card2);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:10px;max-width:100%}
+.library-upload label{color:var(--muted);font-size:12px;display:flex;flex-direction:column;gap:5px}
+.library-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:12px}
+.library-file{padding:13px;background:var(--card2);border-radius:8px;border:1px solid var(--line);min-width:0}
+.library-file label{display:flex;gap:9px;align-items:flex-start;overflow-wrap:anywhere}
+.library-file .meta{color:var(--muted);font-size:12px;line-height:1.6;margin:8px 0}
+.library-file a,.source-links a{color:#a7c9ff}
+.source-links{display:flex;gap:8px;flex-wrap:wrap;padding:10px 0}
+.source-links a{border:1px solid var(--line);border-radius:5px;padding:5px 8px;font-size:12px}
+#uploadStatus{white-space:pre-wrap;font-size:13px;color:var(--muted);margin-bottom:12px}
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
     <div>
-      <h1>🏕️ BlueHarbor <span class="dot">AI Support 控制台</span></h1>
-      <div class="sub">FastAPI + LangChain RAG + CrewAI 多智能体 · 功能导览 &amp; 实时执行监控</div>
+      <h1>product customer service</h1>
+      <div class="sub"><a href="/agent-workflow" target="_blank" style="color:inherit">Multi-agent animation</a> · BlueHarbor Outdoor · Two-agent support · Live execution events</div>
     </div>
     <div>
-      <span id="refreshAt">等待连接…</span>
-      <button class="btn" onclick="refresh(true)">立即刷新</button>
+      <span id="refreshAt">Connecting…</span>
+      <button class="btn" onclick="refresh(true)">Refresh</button>
     </div>
   </header>
 
   <div class="cards" id="cards">
-    <div class="card"><div class="k">服务状态</div><div class="v" id="c-health">-</div></div>
-    <div class="card"><div class="k">LLM 模型</div><div class="v small" id="c-llm">-</div></div>
-    <div class="card"><div class="k">Embedding</div><div class="v small" id="c-emb">-</div></div>
-    <div class="card"><div class="k">知识库分块</div><div class="v acc" id="c-chunks">-</div></div>
-    <div class="card"><div class="k">缓存命中率</div><div class="v" id="c-hit">-</div></div>
-    <div class="card"><div class="k">P95 延迟</div><div class="v" id="c-p95">-</div></div>
-    <div class="card"><div class="k">限流拦截</div><div class="v" id="c-blocked">-</div></div>
-    <div class="card"><div class="k">请求总数</div><div class="v" id="c-total">-</div></div>
+    <div class="card"><div class="k">Service status</div><div class="v" id="c-health">-</div></div>
+    <div class="card"><div class="k">Language model</div><div class="v small" id="c-llm">-</div></div>
+    <div class="card"><div class="k">Document retrieval</div><div class="v small" id="c-emb">-</div></div>
+    <div class="card"><div class="k">Knowledge chunks</div><div class="v acc" id="c-chunks">-</div></div>
+    <div class="card"><div class="k">Cache hit rate</div><div class="v" id="c-hit">-</div></div>
+    <div class="card"><div class="k">P95 latency</div><div class="v" id="c-p95">-</div></div>
+    <div class="card"><div class="k">Rate-limit blocks</div><div class="v" id="c-blocked">-</div></div>
+    <div class="card"><div class="k">Recorded requests</div><div class="v" id="c-total">-</div></div>
   </div>
 
+  <section aria-label="Knowledge and orders">
+    <h2>Knowledge and orders <span class="tag">Upload reference files for customer service</span></h2>
+    <p style="color:var(--muted);font-size:13px">PDF: product information, policies and other text documents. CSV: order records. Select the files to use in the next conversation.</p>
+    <div class="library-upload">
+      <label>PDF or CSV files<input id="libraryFiles" type="file" accept=".pdf,.csv" multiple></label>
+      <label>CSV order ID column (optional)<input id="idColumn" placeholder="Auto-detect, or enter an exact heading"></label>
+      <button class="btn" id="uploadBtn" type="button" onclick="uploadFiles()">Upload files</button>
+    </div>
+    <div id="uploadStatus" role="status">Text PDFs up to 50 pages; UTF-8 CSV with comma, semicolon or tab separators. Maximum 20 MB per file.</div>
+    <div class="library-list" id="libraryList"></div>
+    <p id="sourceScope" style="font-size:12px;color:var(--muted)"></p>
+  </section>
+
     <section>
-    <h2>💬 用户模拟对话 <span class="tag">在控制台模拟用户提问，右侧实时查看全链路执行过程</span></h2>
+    <h2>💬 Support conversation <span class="tag">Ask a business question and inspect the actual request stages</span></h2>
     <div class="console-grid">
       <div class="chat-panel">
         <div class="chat-head">
-          <input id="sessionId" class="session-input" value="console" placeholder="会话 ID（模拟不同用户）" spellcheck="false">
-          <button class="btn ghost" onclick="clearChat()">清空</button>
+          <input id="sessionId" class="session-input" value="console" placeholder="Session ID" spellcheck="false">
+          <button class="btn ghost" onclick="clearChat()">Clear view</button>
         </div>
         <div class="chat-body" id="chatBody"></div>
         <div class="chat-sugs" id="chatSugs"></div>
         <div class="chat-input">
-          <input id="chatInput" placeholder="输入用户问题，Enter 发送…" spellcheck="false">
-          <button class="btn" id="sendBtn" onclick="sendChat()">发送</button>
+          <input id="chatInput" placeholder="Ask a question; press Enter to send…" spellcheck="false">
+          <button class="btn" id="sendBtn" onclick="sendChat()">Send</button>
         </div>
       </div>
       <div class="pipe-panel">
-        <div class="pipe-head"><span>🛰️ 全链路可视化</span><span class="pipe-state" id="pipeState">就绪</span></div>
+        <div class="pipe-head"><span>🛰️ Agent activity</span><span class="pipe-state" id="pipeState">Ready</span></div>
         <div class="pipe" id="pipe"></div>
       </div>
     </div>
   </section>
 
 <section>
-    <h2>🧩 这个项目能做什么 <span class="tag">点击卡片查看一句话说明</span></h2>
+    <p>Read-only order lookup uses your selected CSV files. Answers to product and policy questions use your selected PDFs.</p>
+    <h2>🧩 Service capabilities <span class="tag">Current implementation</span></h2>
     <div class="grid" id="feats"></div>
   </section>
 
   <section>
-    <h2>📡 实时执行监控 <span class="tag" id="traceCount">3 秒自动刷新</span></h2>
-    <table>
+    <h2>📡 Request monitor <span class="tag" id="traceCount">Refreshes every 3 seconds</span></h2>
+    <div style="overflow-x:auto"><table>
       <thead><tr>
-        <th>时间</th><th>问题</th><th>会话</th><th>意图</th><th>引擎</th>
-        <th>缓存</th><th>阶段耗时分解</th><th>总耗时</th><th>状态</th>
+        <th>Time</th><th>Question</th><th>Session</th><th>Intent</th><th>Engine</th>
+        <th>Cache</th><th>Stage timings</th><th>Total</th><th>Status</th>
       </tr></thead>
       <tbody id="rows"></tbody>
-    </table>
+    </table></div>
     <div class="legend">
-      <span><i style="background:var(--accent)"></i>缓存查询</span>
-      <span><i style="background:var(--ok)"></i>检索/生成</span>
-      <span><i style="background:var(--warn)"></i>意图</span>
-      <span><i style="background:#a78bfa"></i>其他</span>
+      <span><i style="background:var(--accent)"></i>Cache lookup</span>
+      <span><i style="background:var(--ok)"></i>Retrieval / generation</span>
+      <span><i style="background:var(--warn)"></i>Intent</span>
+      <span><i style="background:#a78bfa"></i>Other</span>
     </div>
     <div class="hist" id="hist"></div>
-    <div style="color:var(--muted);font-size:12px;margin-top:6px">最近 20 条请求总耗时（ms）</div>
+    <div style="color:var(--muted);font-size:12px;margin-top:6px">Total latency for the last 20 requests (ms)</div>
   </section>
 
   <footer style="color:var(--muted);font-size:12px;text-align:center;padding:10px">
-    接口：<span class="mono">/dashboard</span> · <span class="mono">/api/v1/stats</span> · <span class="mono">/api/v1/traces</span>
+    Endpoints: <span class="mono">/dashboard</span> · <span class="mono">/api/v1/stats</span> · <span class="mono">/api/v1/traces</span>
   </footer>
 </div>
 
 <script>
 const FEATS = [
-  ["🧠","多智能体编排","CrewAI 意图识别官 → 客服执行员，多工具协作，失败自动降级内置路由"],
-  ["📚","知识库问答","RAG 检索增强生成，启动自动导入示例知识库，支持上传文档"],
-  ["🔍","混合检索","向量 + jieba/BM25 词面双路 → RRF 融合，命中率 85%→98%"],
-  ["⚖️","语义重排","bge-reranker 对候选打分重排，懒加载 + 异常自动降级"],
-  ["💬","会话记忆","session_id 多轮上下文，保留最近 N 轮"],
-  ["⚡","SSE 流式","逐 token 流式输出，缓存命中时整段秒回"],
-  ["📄","文档解析分块","PDF / Word / Markdown / TXT 解析，标题分块 + 递归分块"],
-  ["📦","订单工具","Mock 订单/物流查询，真实项目对接 order-server"],
-  ["🔁","重试机制","tenacity 指数退避，429 / 5xx / 网络错误自动重试"],
-  ["🛡️","限流","按 IP 滑动窗口（60 秒），超限返回 JSON 429"],
-  ["💾","语义缓存","余弦 + 词面双门限命中复用答案，动态数据不缓存"],
-  ["📊","效果评测","RAGAS 四指标 + LLM-as-Judge + 52 条评测集"],
-  ["🧪","检索实验","vector / bm25 / hybrid 命中率对比脚本"],
-  ["📐","分块实验","chunk_size / overlap 对检索的影响对比"],
-  ["🐳","容器化","Docker + docker-compose + GitHub Actions 门禁"],
-  ["📡","链路追踪","本页面：每阶段耗时 / P95 / 缓存命中率实时监控"]
+  ["📚","Product and policy answers","Search uploaded product and policy PDFs with page references."],
+  ["📦","Order status lookup","Exact IDs from selected CSV files, with original field values and record references."],
+  ["🧠","Optional CrewAI workflow","Legacy opt-in only. The default engine uses an explicit Investigator and Reviewer loop."],
+  ["🔍","Document retrieval","Page-aware PDF extraction and keyword retrieval; original sources stay available."],
+  ["💬","Session context","Recent conversation turns held in memory for this session."],
+  ["📡","Request tracing","Actual agent handoffs, tool requests, results and review decisions."]
 ];
 const rows = document.getElementById("rows");
 const feats = document.getElementById("feats");
@@ -210,7 +226,7 @@ function stageBar(e){
   const cache=e.cache_lookup_ms||0, llm=e.llm_ms||0, intent=e.intent_ms||0, retr=e.retrieval_ms||0;
   const total=e.total_ms||Math.max(cache,llm,intent,retr,1);
   const p=x=>total?Math.max(0,Math.min(100,x/total*100)):0;
-  return `<div class="bar" title="缓存 ${ms(cache)} · 检索 ${ms(retr)} · 意图 ${ms(intent)} · 生成 ${ms(llm)}">
+  return `<div class="bar" title="Cache ${ms(cache)} · Retrieval ${ms(retr)} · Intent ${ms(intent)} · Generation ${ms(llm)}">
     <div class="s1" style="width:${p(cache)}%"></div>
     <div class="s2" style="width:${p(llm+retr)}%"></div>
     <div class="s3" style="width:${p(intent)}%"></div></div>`;
@@ -218,10 +234,10 @@ function stageBar(e){
 
 function renderStats(s,t){
   const set=(id,v,cls="")=>{const el=document.getElementById(id); el.textContent=v; el.className="v "+cls;};
-  set("c-health", s?"在线":"离线", s?"ok":"err");
+  set("c-health", s?"Online":"Offline", s?"ok":"err");
   set("c-llm", s?.llm_model||"-","small");
-  set("c-emb", s?.embedding_model||"-","small");
-  set("c-chunks", s?.total_chunks??"-","acc");
+  set("c-emb", "PDF keywords / exact CSV IDs","small");
+  set("c-chunks", libraryDocuments.filter(d=>d.active).reduce((n,d)=>n+(d.chunk_count||0),0),"acc");
   set("c-hit", t?(t.cache_hit_rate*100).toFixed(0)+"%":"-", t&&t.cache_hit_rate>0.5?"ok":"");
   set("c-p95", t?ms(t.p95_ms):"-", t&&t.p95_ms>3000?"warn":"");
   set("c-blocked", t?.blocked??(s?.ratelimit_blocked??0), (s?.ratelimit_blocked||t?.blocked)>0?"err":"");
@@ -230,7 +246,7 @@ function renderStats(s,t){
 
 function renderRows(entries){
   rows.innerHTML = entries.length ? entries.map(e=>{
-    const cache = e.cache_checked ? (e.cache_hit ? `<span style="color:var(--ok)">命中</span>` : `<span style="color:var(--muted)">未中</span>`) : "-";
+    const cache = e.cache_checked ? (e.cache_hit ? `<span style="color:var(--ok)">Hit</span>` : `<span style="color:var(--muted)">Miss</span>`) : "-";
     return `<tr>
       <td class="mono">${fmt(e.ts)}</td>
       <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${(e.message||"").replace(/"/g,"&quot;")}">${e.message||"-"}</td>
@@ -240,9 +256,9 @@ function renderRows(entries){
       <td>${cache}</td>
       <td>${stageBar(e)}</td>
       <td class="mono">${ms(e.total_ms)}</td>
-      <td>${e.status===429?'<span style="color:var(--err)">429</span>':e.status===500?'<span style="color:var(--err)">500</span>':'<span style="color:var(--ok)">200</span>'}</td>
+      <td>${e.status===429?'<span style="color:var(--err)">429</span>':e.status>=500?`<span style="color:var(--err)">${e.status}</span>`:'<span style="color:var(--ok)">200</span>'}</td>
     </tr>`;
-  }).join("") : `<tr><td colspan="9" class="empty">暂无请求——去调用 /api/v1/chat 或 /api/v1/chat/stream 试试，3 秒内这里会出现执行明细</td></tr>`;
+  }).join("") : `<tr><td colspan="9" class="empty">Send a message to see request timings here.</td></tr>`;
 }
 
 function renderHist(entries){
@@ -252,22 +268,23 @@ function renderHist(entries){
   hist.innerHTML = recent.length ? recent.map(e=>{
     const h=Math.max(2,(e.total_ms||0)/max*88);
     return `<div class="h" style="height:${h}px" title="${fmt(e.ts)} ${ms(e.total_ms)}"><span>${e.total_ms|0}</span></div>`;
-  }).join("") : `<div class="empty" style="width:100%">暂无数据</div>`;
+  }).join("") : `<div class="empty" style="width:100%">No requests yet</div>`;
 }
 
 const STAGES=[
-  {key:"rate_limit",icon:"🛡️",name:"限流检查"},
-  {key:"cache",icon:"💾",name:"语义缓存"},
-  {key:"intent",icon:"🎯",name:"意图识别"},
-  {key:"retrieval",icon:"🔍",name:"混合检索"},
-  {key:"tool",icon:"📦",name:"工具调用"},
-  {key:"generate",icon:"✨",name:"生成回答"},
-  {key:"write",icon:"🧠",name:"记忆/缓存写入"},
-  {key:"error",icon:"⚠️",name:"异常"}
+  {key:"rate_limit",icon:"🛡️",name:"Rate-limit check"},
+  {key:"cache",icon:"💾",name:"Semantic cache"},
+  {key:"intent",icon:"🎯",name:"Intent classification"},
+  {key:"retrieval",icon:"🔍",name:"Hybrid retrieval"},
+  {key:"tool",icon:"📦",name:"Tool call"},
+  {key:"generate",icon:"✨",name:"Answer generation"},
+  {key:"write",icon:"🧠",name:"Memory / cache write"},
+  {key:"error",icon:"⚠️",name:"Error"}
 ];
+const agentActivity=[];
 const pipeState={};
 STAGES.forEach(s=>pipeState[s.key]={status:"wait",ms:null,msg:"",detail:""});
-const SUGS=["如何发布商品？","查询订单 202608090001 的物流","你好，简单介绍下你们平台"];
+const SUGS=["What is the return policy?","My backpack BH-1003 arrived damaged. What can I do?","Tell me about BlueHarbor"];
 let sending=false;
 
 function escHtml(t){const d=document.createElement("div");d.textContent=t;return d.innerHTML;}
@@ -280,8 +297,9 @@ function addMsg(role,text){
   b.appendChild(el);scrollChat();return el;
 }
 function resetPipe(){
+  agentActivity.length=0;
   STAGES.forEach(s=>pipeState[s.key]={status:"wait",ms:null,msg:"",detail:""});
-  document.getElementById("pipeState").textContent="就绪";
+  document.getElementById("pipeState").textContent="Ready";
   renderPipe();
 }
 function markStage(key,status,ms,msg,detail){
@@ -306,12 +324,12 @@ function renderPipe(){
 }
 function retrDetail(d){
   if(!d) return "";
-  const parts=["向量 "+ms(d.vector_ms)+"/"+d.vector_hits+"条"];
+  const parts=["Vector "+ms(d.vector_ms)+"/"+d.vector_hits+" records"];
   if(d.hybrid){
-    parts.push("BM25 "+ms(d.bm25_ms)+"/"+d.bm25_hits+"条");
-    parts.push("RRF "+ms(d.fusion_ms)+"/"+d.fused+"条");
+    parts.push("BM25 "+ms(d.bm25_ms)+"/"+d.bm25_hits+" records");
+    parts.push("RRF "+ms(d.fusion_ms)+"/"+d.fused+" records");
   }
-  if(d.rerank_enabled) parts.push("重排 "+ms(d.rerank_ms));
+  if(d.rerank_enabled) parts.push("Rerank "+ms(d.rerank_ms));
   return parts.join(" · ");
 }
 function parseSSE(part){
@@ -319,25 +337,59 @@ function parseSSE(part){
   if(!line) return null;
   try{return JSON.parse(line.slice(5).trim());}catch(e){return null;}
 }
+function presentationEvidence(value){
+  if(Array.isArray(value))return value.map(presentationEvidence);
+  if(value && typeof value === "object")return Object.fromEntries(Object.entries(value)
+    .filter(([key])=>key!=="simulated")
+    .map(([key,item])=>[key,presentationEvidence(item)]));
+  if(typeof value === "string" && value === "data/mock_orders.json")return "Order records";
+  return value;
+}
 function handleEvent(ev,bubble){
-  if(ev.type==="stage"){
+  if(ev.type==="agent_event"){
+    agentActivity.push(ev);
+    const pipe=document.getElementById("pipe");
+    pipe.replaceChildren(...agentActivity.map(item=>{
+      const row=document.createElement("div");row.className="pstep ok";
+      const body=document.createElement("div");body.className="body";
+      const title=document.createElement("div");title.className="title";
+      title.textContent=`${item.sequence}. ${item.agent === "reviewer" ? "Evidence Reviewer" : "Support Investigator"} · ${item.kind}`;
+      const detail=document.createElement("div");detail.className="detail";
+      detail.textContent=item.tool ? `${item.tool}: ${JSON.stringify(presentationEvidence(item.result ?? item.arguments))}` : item.message;
+      body.append(title,detail);row.append(body);return row;
+    }));
+    pipe.scrollTop=pipe.scrollHeight;
+    document.getElementById("pipeState").textContent=ev.agent+" · "+ev.kind;
+  }else if(ev.type==="stage"){
     const key=ev.stage;
     const status=ev.ok?"ok":(ev.skipped?"skip":"err");
     let detail=ev.detail?retrDetail(ev.detail):"";
     if(key==="retrieval"&&ev.sources&&ev.sources.length){
-      detail+=(detail?"\n":"")+"来源: "+ev.sources.join(", ");
+      detail+=(detail?"\n":"")+"Sources: "+ev.sources.join(", ");
     }
     markStage(key,status,ev.ms,ev.msg,detail);
-    if(key==="error") document.getElementById("pipeState").textContent="失败";
+    if(key==="error") document.getElementById("pipeState").textContent="Failed";
   }else if(ev.type==="intent"){
-    markStage("intent","ok",null,"意图识别为 "+ev.intent,"");
+    markStage("intent","ok",null,"Intent: "+ev.intent,"");
   }else if(ev.type==="token"){
     bubble.textContent+=ev.content;
     scrollChat();
   }else if(ev.type==="done"){
+    if(ev.engine === "agent_loop"){
+      if(ev.citations?.length){
+        const links=document.createElement("div");links.className="source-links";
+        ev.citations.forEach(c=>{
+          if(!/^\/api\/v1\/documents\/[a-f0-9]{32}\/(file|records\/\d+)/.test(c.url))return;
+          const a=document.createElement("a");a.href=c.url;a.textContent=c.source;a.target="_blank";a.rel="noopener";links.append(a);
+        });
+        bubble.after(links);
+      }
+      document.getElementById("pipeState").textContent=`${ev.stop_reason} · ${ev.model_calls} model calls · ${ms(ev.total_ms)}`;
+      return;
+    }
     if(pipeState.error.status!=="err"){
-      if(pipeState.write.status==="wait")markStage("write","skip",null,"（未执行）","");
-      document.getElementById("pipeState").textContent="完成 · "+ms(ev.total_ms);
+      if(pipeState.write.status==="wait")markStage("write","skip",null,"(not executed)","");
+      document.getElementById("pipeState").textContent="Complete · "+ms(ev.total_ms);
     }
   }
 }
@@ -349,20 +401,20 @@ async function sendChat(){
   addMsg("user",text);
   input.value="";
   resetPipe();
-  document.getElementById("pipeState").textContent="处理中…";
+  document.getElementById("pipeState").textContent="Processing…";
   sending=true;document.getElementById("sendBtn").disabled=true;
   const bubble=addMsg("ai","");bubble.classList.add("typing");
   try{
     const resp=await fetch("/api/v1/chat/stream",{
       method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({message:text,session_id:sessionId})
+      body:JSON.stringify({message:text,session_id:sessionId,document_ids:selectedDocumentIds()})
     });
     if(!resp.ok){
       let detail="HTTP "+resp.status;
       try{const j=await resp.json();detail=j.detail||detail;}catch(e){}
-      markStage("rate_limit","err",0,"限流/请求被拦截","");
+      markStage("rate_limit","err",0,"Request blocked","");
       bubble.textContent="⚠️ "+detail;
-      document.getElementById("pipeState").textContent="被拦截";
+      document.getElementById("pipeState").textContent="Blocked";
       return;
     }
     const reader=resp.body.getReader();
@@ -378,13 +430,13 @@ async function sendChat(){
     }
     if(buf){const ev=parseSSE(buf);if(ev)handleEvent(ev,bubble);}
   }catch(err){
-    bubble.textContent="⚠️ 网络错误："+err.message;
-    document.getElementById("pipeState").textContent="失败";
+    bubble.textContent="⚠️ Network error: "+err.message;
+    document.getElementById("pipeState").textContent="Failed";
   }finally{
     sending=false;
     document.getElementById("sendBtn").disabled=false;
     bubble.classList.remove("typing");
-    if(!bubble.textContent.trim())bubble.textContent="（无输出）";
+    if(!bubble.textContent.trim())bubble.textContent="(no output)";
     scrollChat();refresh(true);
   }
 }
@@ -405,16 +457,73 @@ async function refresh(manual){
     renderStats(s,t.summary);
     renderRows(t.entries);
     renderHist(t.entries);
-    document.getElementById("traceCount").textContent=`${t.summary.total} 条 · 3 秒自动刷新`;
-    document.getElementById("refreshAt").textContent=`最后刷新 ${new Date().toLocaleTimeString()}`;
+    document.getElementById("traceCount").textContent=`${t.summary.total}  records · Refreshes every 3 seconds`;
+    document.getElementById("refreshAt").textContent=`Last refreshed ${new Date().toLocaleTimeString()}`;
   }catch(err){
-    document.getElementById("refreshAt").textContent="连接失败："+err.message;
-    document.getElementById("c-health").textContent="离线";
+    document.getElementById("refreshAt").textContent="Connection failed: "+err.message;
+    document.getElementById("c-health").textContent="Offline";
     document.getElementById("c-health").className="v err";
   }
 }
 document.getElementById("chatSugs").innerHTML=SUGS.map(s=>`<span class="sug" onclick="useSug(this)">${escHtml(s)}</span>`).join("");
 document.getElementById("chatInput").addEventListener("keydown",e=>{if(e.key==="Enter")sendChat();});
+
+let libraryDocuments=[];
+let libraryReady=false;
+const selectedFiles=new Set();
+function selectedDocumentIds(){
+  const active=libraryDocuments.filter(d=>d.active);
+  return active.length ? active.filter(d=>selectedFiles.has(d.document_id)).map(d=>d.document_id) : null;
+}
+function renderLibrary(){
+  const list=document.getElementById("libraryList");list.replaceChildren();
+  for(const doc of libraryDocuments){
+    const card=document.createElement("div");card.className="library-file";
+    const label=document.createElement("label");const input=document.createElement("input");input.type="checkbox";
+    input.checked=doc.active&&selectedFiles.has(doc.document_id);input.disabled=!doc.active;
+    input.onchange=()=>{input.checked?selectedFiles.add(doc.document_id):selectedFiles.delete(doc.document_id);renderLibrary()};
+    const name=document.createElement("span");name.textContent=doc.name;label.append(input,name);
+    const meta=document.createElement("div");meta.className="meta";
+    meta.textContent=doc.kind==='pdf'?`${doc.status} · ${doc.page_count} pages · ${doc.chunk_count} passages`:`${doc.status} · ${doc.record_count} records · ID: ${doc.id_column}`;
+    const warnings=document.createElement("div");warnings.className="meta";warnings.textContent=(doc.warnings||[]).join(' ');
+    const state=document.createElement("button");state.className="btn ghost";state.textContent=doc.active?'Archive':'Restore';
+    state.onclick=async()=>{state.disabled=true;try{
+      const r=await fetch(`/api/v1/documents/${doc.document_id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({active:!doc.active})});
+      if(!r.ok)throw Error((await r.json()).detail||'Could not update file');
+      if(!doc.active)selectedFiles.add(doc.document_id);await refreshLibrary();
+    }catch(e){document.getElementById('uploadStatus').textContent=e.message;state.disabled=false}};
+    card.append(label,meta,warnings,state);
+    if(doc.active){const link=document.createElement('a');link.href=`/api/v1/documents/${doc.document_id}/file`;link.target='_blank';link.rel='noopener';link.textContent=' Open original';card.append(link)}
+    list.append(card);
+  }
+  document.getElementById('sourceScope').textContent=libraryDocuments.some(d=>d.active)
+    ?`${selectedDocumentIds().length} files selected. Only selected uploads are used; missing facts are not filled from built-in records.`
+    :'Upload files to add your knowledge and orders. Built-in references are available when no files are active.';
+}
+async function refreshLibrary(){
+  const r=await fetch('/api/v1/documents');if(!r.ok)throw Error('Could not load document library');
+  const previous=new Set(libraryDocuments.map(d=>d.document_id));
+  libraryDocuments=(await r.json()).documents;
+  for(const d of libraryDocuments)if(d.active&&(!libraryReady||!previous.has(d.document_id)))selectedFiles.add(d.document_id);
+  libraryReady=true;renderLibrary();
+}
+async function uploadFiles(){
+  const files=[...document.getElementById('libraryFiles').files];if(!files.length)return;
+  const button=document.getElementById('uploadBtn');button.disabled=true;
+  const status=document.getElementById('uploadStatus');const results=[];
+  try{for(const file of files){
+    status.textContent=[...results,`Reading ${file.name}…`].join('\n');
+    if(file.size>20*1024*1024){results.push(`${file.name}: exceeds 20 MB`);continue}
+    const form=new FormData();form.append('file',file);
+    if(file.name.toLowerCase().endsWith('.csv'))form.append('id_column',document.getElementById('idColumn').value.trim());
+    const r=await fetch('/api/v1/documents',{method:'POST',body:form});const data=await r.json();
+    if(!r.ok){results.push(`${file.name}: ${data.detail||'Upload failed'}`);continue}
+    selectedFiles.add(data.document_id);results.push(`${file.name}: ${data.duplicate?'already available':'ready'}`);
+  }await refreshLibrary();status.textContent=results.join('\n');
+  }catch(e){status.textContent=[...results,e.message].join('\n')}finally{button.disabled=false}
+}
+refreshLibrary().catch(e=>{document.getElementById('uploadStatus').textContent=e.message});
+
 resetPipe();
 refresh(true);
 setInterval(()=>refresh(false),3000);

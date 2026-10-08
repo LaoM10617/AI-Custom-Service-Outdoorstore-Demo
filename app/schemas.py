@@ -1,13 +1,14 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """接口出入参模型。"""
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ChatRequest(BaseModel):
     message: str
     session_id: Optional[str] = "default"
+    document_ids: Optional[list[str]] = Field(default=None, max_length=30)
 
 
 class ChatResponse(BaseModel):
@@ -15,6 +16,13 @@ class ChatResponse(BaseModel):
     intent: Optional[str] = None
     sources: list = []
     engine: str = "langchain"   # langchain | crew
+    run_id: Optional[str] = None
+    stop_reason: Optional[str] = None
+    review_approved: bool = False
+    citations: list[dict] = Field(default_factory=list)
+    events: list[dict] = Field(default_factory=list)
+    model_calls: int = 0
+    tool_calls: int = 0
     used_crew: bool = False
     cache_hit: bool = False
 
