@@ -188,12 +188,21 @@ async def chat_stream(req: ChatRequest):
         async def stream_agents():
             async for event in agent_events(req.message, req.session_id, req.document_ids):
                 if event["type"] == "result":
-                    yield _sse({"type": "token", "content": event["reply"]})
+                    reply = event["reply"]
+                    yield _sse({"type": "response_start", "review_approved": event["review_approved"]})
+                    # Stream only the reviewed response; never expose investigator drafts.
+                    # Bound delivery time for long answers to roughly 2.4 seconds.
+                    chunk_size = max(8, (len(reply) + 79) // 80)
+                    for offset in range(0, len(reply), chunk_size):
+                        yield _sse({"type": "token", "content": reply[offset:offset + chunk_size]})
+                        if offset + chunk_size < len(reply):
+                            await asyncio.sleep(0.03)
                     yield _sse({**event, "type": "done"})
                 else:
                     yield _sse(event)
 
-        return StreamingResponse(stream_agents(), media_type="text/event-stream")
+        return StreamingResponse(stream_agents(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
     async def _error(message: str):
         yield _sse({"type": "token", "content": message})

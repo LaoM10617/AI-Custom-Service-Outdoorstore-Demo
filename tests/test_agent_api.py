@@ -1,4 +1,5 @@
 """Verify both chat endpoints use the same loop with a deterministic model double."""
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -29,6 +30,14 @@ class ApiTests(unittest.TestCase):
             self.assertIn('"agent": "reviewer"',stream.text)
             self.assertIn('"stop_reason": "review_approved"',stream.text)
             self.assertIn('"type": "done"',stream.text)
+            events = [json.loads(line[6:]) for line in stream.text.splitlines() if line.startswith("data: ")]
+            tokens = [e["content"] for e in events if e["type"] == "token"]
+            self.assertGreater(len(tokens), 1)
+            self.assertEqual("".join(tokens), events[-1]["reply"])
+            first_token = next(i for i, e in enumerate(events) if e["type"] == "token")
+            approval = next(i for i, e in enumerate(events) if e.get("kind") == "review" and e.get("decision") == "approve")
+            self.assertLess(approval, first_token)
+            self.assertEqual(stream.headers["x-accel-buffering"], "no")
             self.assertEqual(client.get('/agent-demo').status_code,200)
             traces=client.get('/api/v1/traces').json()['entries']
             self.assertTrue(any(t.get('agent_events') for t in traces))

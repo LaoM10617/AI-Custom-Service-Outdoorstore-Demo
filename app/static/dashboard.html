@@ -371,6 +371,8 @@ function handleEvent(ev,bubble){
     if(key==="error") document.getElementById("pipeState").textContent="Failed";
   }else if(ev.type==="intent"){
     markStage("intent","ok",null,"Intent: "+ev.intent,"");
+  }else if(ev.type==="response_start"){
+    document.getElementById("pipeState").textContent=ev.review_approved?"Review approved · Writing response…":"Writing response…";
   }else if(ev.type==="token"){
     bubble.textContent+=ev.content;
     scrollChat();

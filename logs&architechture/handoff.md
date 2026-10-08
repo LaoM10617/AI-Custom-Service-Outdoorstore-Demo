@@ -113,3 +113,9 @@ Limits and operation:
 - Native-text PDFs only; unreadable/image-only documents need OCR. Partial extraction warnings are shown. Keyword retrieval is not a general accuracy guarantee, and arbitrary order aggregation/SQL is unsupported.
 - CSV preserves raw values and leading zeros. Duplicate IDs return up to five records and a total match count. Missing or conflicting evidence must be acknowledged rather than filled from examples.
 - Uploads supply local read-only business evidence; no Shopify synchronization, authentication, customer ownership checks or business-action execution was added. The old `/api/v1/ingest` endpoint belongs to legacy in-memory RAG; the new loop uses `/api/v1/documents`.
+
+## Reviewed-response streaming — 2026-10-08
+
+The loop SSE endpoint now sends the final response in paced text chunks after Investigator/Reviewer execution, followed by the existing done event and citations. This is delivery of the completed reviewed answer, not provider token generation streamed before review. A response_start event updates the dashboard to Writing response. Chunk delivery is capped at approximately 2.4 seconds; no extra model request is made. Error/limitation responses also use the same delivery path. SSE headers disable caching and proxy buffering where supported.
+
+Changed app/main.py, app/static/dashboard.html and tests/test_agent_api.py. Eleven focused API/loop tests passed, including exact text reconstruction and approval-before-token ordering. A real Edge/Gemini request for BH-1002 produced 23 chunks over 748 ms, matched the final reply exactly, began after reviewer approval and had no JavaScript errors. The local server was restarted. Changes are not committed or pushed in this step.
